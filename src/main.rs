@@ -71,6 +71,17 @@ fn main() {
                 let op_res = match json.op.as_str() {
                     "add" => add_dep(&mut contents, deps_list, json.dep),
                     "remove" => remove_dep(&mut contents, deps_list, json.dep),
+                    "get" => {
+                        let deps = match get_deps(deps_list) {
+                            Ok(deps) => deps,
+                            Err(_) => {
+                                send_res("error", Some("Could not get deps".to_string()));
+                                continue;
+                            }
+                        };
+                        send_res("success", Some(deps.join(",")));
+                        continue;
+                    }
                     unknown_op => {
                         send_res(
                             "error",
@@ -184,6 +195,14 @@ fn remove_dep(
     contents.push_str(&end_section);
 
     Ok(contents.to_string())
+}
+
+fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>, Error> {
+    Ok(deps_list
+        .children()
+        .into_iter()
+        .map(|child| child.text().to_string())
+        .collect())
 }
 
 fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange, Error> {
