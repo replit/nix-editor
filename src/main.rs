@@ -1,9 +1,31 @@
 use rnix::*;
-use std::{env, fs};
+use std::fs;
 use std::{io, io::prelude::*, io::Error, io::ErrorKind};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    // dep to add
+    #[clap(short, long, value_parser)]
+    add: Option<String>,
+
+    // dep to remove
+    #[clap(short, long, value_parser)]
+    remove: Option<String>,
+
+    // filepath for replit.nix file
+    #[clap(short, long, value_parser)]
+    path: Option<String>,
+
+    // human readable output
+    #[clap(short, long, value_parser, default_value = "false")]
+    human: bool,
+}
 
 #[derive(Serialize, Deserialize)]
 struct Op {
@@ -19,18 +41,28 @@ struct Res {
 
 fn main() {
     let default_replit_nix_filepath = "replit.nix";
-    let mut args = env::args();
 
-    let arg1 = args
-        .nth(1)
+    // handle command line args
+    let args = Args::parse();
+
+    let replit_nix_filepath = args
+        .path
         .unwrap_or_else(|| default_replit_nix_filepath.to_string());
 
-    if arg1 == "--info" {
-        println!("Version: {}", env!("CARGO_PKG_VERSION"));
+    let human_readable = args.human;
+
+    // if user explicitly passes in a add or remove dep, then we only handle that specific op
+    if let Some(add_dep) = args.add {
+        let (status, data) = perform_op("add", Some(add_dep), &replit_nix_filepath);
+        send_res(&status, data, human_readable);
         return;
     }
 
-    let replit_nix_filepath = arg1;
+    if let Some(remove_dep) = args.remove {
+        let (status, data) = perform_op("remove", Some(remove_dep), &replit_nix_filepath);
+        send_res(&status, data, human_readable);
+        return;
+    }
 
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -39,90 +71,104 @@ fn main() {
                 let json: Op = match from_str(&line) {
                     Ok(json_val) => json_val,
                     Err(_) => {
-                        send_res("error", Some("Invalid JSON".to_string()));
+                        send_res("error", Some("Invalid JSON".to_string()), human_readable);
                         continue;
                     }
                 };
 
-                // read replit.nix file
-                let mut contents = match fs::read_to_string(&replit_nix_filepath) {
-                    Ok(contents) => contents,
-                    Err(_) => {
-                        send_res(
-                            "error",
-                            Some(
-                                format!("Could not read file {}", &replit_nix_filepath).to_string(),
-                            ),
-                        );
-                        continue;
-                    }
-                };
-
-                let ast = rnix::parse(&contents);
-
-                let deps_list = match verify_get(ast.node()) {
-                    Ok(deps_list) => deps_list,
-                    Err(_) => {
-                        send_res("error", Some("Could not verify and get".to_string()));
-                        continue;
-                    }
-                };
-
-                let op_res = match json.op.as_str() {
-                    "add" => add_dep(&mut contents, deps_list, json.dep),
-                    "remove" => remove_dep(&mut contents, deps_list, json.dep),
-                    "get" => {
-                        let deps = match get_deps(deps_list) {
-                            Ok(deps) => deps,
-                            Err(_) => {
-                                send_res("error", Some("Could not get deps".to_string()));
-                                continue;
-                            }
-                        };
-                        send_res("success", Some(deps.join(",")));
-                        continue;
-                    }
-                    unknown_op => {
-                        send_res(
-                            "error",
-                            Some(format!("Unknown operation {}", unknown_op).to_string()),
-                        );
-                        continue;
-                    }
-                };
-
-                let new_contents = match op_res {
-                    Ok(new_contents) => new_contents,
-                    Err(_) => {
-                        send_res("error", Some("Could not perform op".to_string()));
-                        continue;
-                    }
-                };
-
-                // write new replit.nix file
-                match fs::write(&replit_nix_filepath, new_contents) {
-                    Ok(_) => {
-                        send_res("success", None);
-                    }
-                    Err(_) => {
-                        send_res(
-                            "error",
-                            Some(
-                                format!("Could not write to file {}", replit_nix_filepath)
-                                    .to_string(),
-                            ),
-                        );
-                    }
-                };
+                let (status, data) = perform_op(&json.op, json.dep, &replit_nix_filepath);
+                send_res(&status, data, human_readable);
             }
             Err(_) => {
-                send_res("error", Some("Could not read stdin".to_string()));
+                send_res(
+                    "error",
+                    Some("Could not read stdin".to_string()),
+                    human_readable,
+                );
             }
         }
     }
 }
 
-fn send_res(status: &str, data: Option<String>) {
+fn perform_op(
+    op: &str,
+    dep: Option<String>,
+    replit_nix_filepath: &String,
+) -> (String, Option<String>) {
+    // read replit.nix file
+    let mut contents = match fs::read_to_string(replit_nix_filepath) {
+        Ok(contents) => contents,
+        Err(_) => {
+            return (
+                "error".to_string(),
+                Some(format!("Could not read file {}", replit_nix_filepath)),
+            );
+        }
+    };
+
+    let ast = rnix::parse(&contents);
+
+    let deps_list = match verify_get(ast.node()) {
+        Ok(deps_list) => deps_list,
+        Err(_) => {
+            return (
+                "error".to_string(),
+                Some("Could not verify and get".to_string()),
+            );
+        }
+    };
+
+    let op_res = match op {
+        "add" => add_dep(&mut contents, deps_list, dep),
+        "remove" => remove_dep(&mut contents, deps_list, dep),
+        "get" => {
+            let deps = match get_deps(deps_list) {
+                Ok(deps) => deps,
+                Err(_) => {
+                    return ("error".to_string(), Some("Could not get deps".to_string()));
+                }
+            };
+            return ("success".to_string(), Some(deps.join(",")));
+        }
+        unknown_op => {
+            return (
+                "error".to_string(),
+                Some(format!("Unknown operation {}", unknown_op)),
+            );
+        }
+    };
+
+    let new_contents = match op_res {
+        Ok(new_contents) => new_contents,
+        Err(_) => {
+            return (
+                "error".to_string(),
+                Some("Could not perform op".to_string()),
+            );
+        }
+    };
+
+    // write new replit.nix file
+    match fs::write(&replit_nix_filepath, new_contents) {
+        Ok(_) => ("success".to_string(), None),
+        Err(_) => (
+            "error".to_string(),
+            Some(format!("Could not write to file {}", replit_nix_filepath)),
+        ),
+    }
+}
+
+fn send_res(status: &str, data: Option<String>, human_readable: bool) {
+    if human_readable {
+        let mut out = status.to_owned();
+
+        if let Some(data) = data {
+            out += &(": ".to_string() + &data);
+        }
+        println!("{}", out);
+        return;
+    }
+
     let res = Res {
         status: status.to_string(),
         data,
@@ -131,7 +177,12 @@ fn send_res(status: &str, data: Option<String>) {
     let json = match to_string(&res) {
         Ok(json) => json,
         Err(_) => {
-            println!("error: could not serialize res");
+            if human_readable {
+                println!("error: Could not serialize to JSON");
+            } else {
+                let err_msg = r#"{"status": "error", "data": "Could not serialize to JSON"}"#;
+                println!("{}", err_msg);
+            }
             return;
         }
     };
