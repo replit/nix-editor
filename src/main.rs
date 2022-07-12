@@ -200,7 +200,6 @@ fn remove_dep(
 fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>, Error> {
     Ok(deps_list
         .children()
-        .into_iter()
         .map(|child| child.text().to_string())
         .collect())
 }

@@ -106,8 +106,6 @@ rec {
           "The Rust Project Developers"
         ];
         features = {
-          "compiler_builtins" = [ "dep:compiler_builtins" ];
-          "core" = [ "dep:core" ];
           "rustc-dep-of-std" = [ "core" "compiler_builtins" ];
         };
         resolvedDefaultFeatures = [ "default" ];
@@ -138,8 +136,6 @@ rec {
           "Alex Crichton <alex@alexcrichton.com>"
         ];
         features = {
-          "compiler_builtins" = [ "dep:compiler_builtins" ];
-          "core" = [ "dep:core" ];
           "rustc-dep-of-std" = [ "core" "compiler_builtins" ];
         };
       };
@@ -160,7 +156,6 @@ rec {
           }
         ];
         features = {
-          "bitflags" = [ "dep:bitflags" ];
           "default" = [ "bitflags" ];
         };
         resolvedDefaultFeatures = [ "bitflags" "default" ];
@@ -184,11 +179,8 @@ rec {
           "Aleksey Kladov <aleksey.kladov@gmail.com>"
         ];
         features = {
-          "dashmap" = [ "dep:dashmap" ];
           "enable" = [ "dashmap" "once_cell" "rustc-hash" ];
-          "once_cell" = [ "dep:once_cell" ];
           "print_at_exit" = [ "enable" ];
-          "rustc-hash" = [ "dep:rustc-hash" ];
         };
       };
       "hashbrown" = rec {
@@ -200,15 +192,9 @@ rec {
           "Amanieu d'Antras <amanieu@gmail.com>"
         ];
         features = {
-          "ahash" = [ "dep:ahash" ];
           "ahash-compile-time-rng" = [ "ahash/compile-time-rng" ];
-          "alloc" = [ "dep:alloc" ];
-          "compiler_builtins" = [ "dep:compiler_builtins" ];
-          "core" = [ "dep:core" ];
           "default" = [ "ahash" "inline-more" ];
-          "rayon" = [ "dep:rayon" ];
           "rustc-dep-of-std" = [ "nightly" "core" "compiler_builtins" "alloc" "rustc-internal-api" ];
-          "serde" = [ "dep:serde" ];
         };
         resolvedDefaultFeatures = [ "inline-more" ];
       };
@@ -233,7 +219,6 @@ rec {
         features = {
           "default" = [ "std" ];
           "rustc-dep-of-std" = [ "align" "rustc-std-workspace-core" ];
-          "rustc-std-workspace-core" = [ "dep:rustc-std-workspace-core" ];
           "use_std" = [ "std" ];
         };
         resolvedDefaultFeatures = [ "default" "std" ];
@@ -253,10 +238,7 @@ rec {
             usesDefaultFeatures = false;
           }
         ];
-        features = {
-          "owning_ref" = [ "dep:owning_ref" ];
-          "serde" = [ "dep:serde" ];
-        };
+        features = {};
       };
       "maybe-uninit" = rec {
         crateName = "maybe-uninit";
@@ -332,7 +314,6 @@ rec {
         ];
         features = {
           "default" = [ "std" ];
-          "libm" = [ "dep:libm" ];
         };
       };
       "parking_lot" = rec {
@@ -413,10 +394,7 @@ rec {
           }
         ];
         features = {
-          "backtrace" = [ "dep:backtrace" ];
           "deadlock_detection" = [ "petgraph" "thread-id" "backtrace" ];
-          "petgraph" = [ "dep:petgraph" ];
-          "thread-id" = [ "dep:thread-id" ];
         };
       };
       "proc-macro2" = rec {
@@ -528,7 +506,6 @@ rec {
           }
         ];
         features = {
-          "serde" = [ "dep:serde" ];
           "serde1" = [ "serde" "text-size/serde" ];
         };
       };
@@ -601,9 +578,7 @@ rec {
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
-        features = {
-          "no-panic" = [ "dep:no-panic" ];
-        };
+        features = {};
       };
       "scopeguard" = rec {
         crateName = "scopeguard";
@@ -634,7 +609,6 @@ rec {
         ];
         features = {
           "ci" = [ "serde" ];
-          "serde" = [ "dep:serde" ];
         };
         resolvedDefaultFeatures = [ "default" ];
       };
@@ -673,7 +647,6 @@ rec {
         features = {
           "default" = [ "std" ];
           "derive" = [ "serde_derive" ];
-          "serde_derive" = [ "dep:serde_derive" ];
         };
         resolvedDefaultFeatures = [ "default" "derive" "serde_derive" "std" ];
       };
@@ -739,7 +712,6 @@ rec {
         features = {
           "alloc" = [ "serde/alloc" ];
           "default" = [ "std" ];
-          "indexmap" = [ "dep:indexmap" ];
           "preserve_order" = [ "indexmap" "std" ];
           "std" = [ "serde/std" ];
         };
@@ -762,7 +734,6 @@ rec {
         ];
         features = {
           "default" = [ "std" ];
-          "serde" = [ "dep:serde" ];
         };
         resolvedDefaultFeatures = [ "default" "std" ];
       };
@@ -790,9 +761,7 @@ rec {
           }
         ];
         features = {
-          "arbitrary" = [ "dep:arbitrary" ];
           "default" = [ "std" ];
-          "serde" = [ "dep:serde" ];
           "std" = [ "serde/std" ];
         };
         resolvedDefaultFeatures = [ "default" "serde" "std" ];
@@ -826,7 +795,6 @@ rec {
           "default" = [ "derive" "parsing" "printing" "clone-impls" "proc-macro" ];
           "printing" = [ "quote" ];
           "proc-macro" = [ "proc-macro2/proc-macro" "quote/proc-macro" ];
-          "quote" = [ "dep:quote" ];
           "test" = [ "syn-test-suite/all-features" ];
         };
         resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "parsing" "printing" "proc-macro" "quote" ];
@@ -841,7 +809,6 @@ rec {
           "Christopher Durham (CAD97) <cad97@cad97.com>"
         ];
         features = {
-          "serde" = [ "dep:serde" ];
         };
       };
       "text_unit" = rec {
@@ -852,10 +819,7 @@ rec {
         authors = [
           "Aleksey Kladov <aleksey.kladov@gmail.com>"
         ];
-        features = {
-          "deepsize" = [ "dep:deepsize" ];
-          "serde" = [ "dep:serde" ];
-        };
+        features = {};
       };
       "unicode-ident" = rec {
         crateName = "unicode-ident";
