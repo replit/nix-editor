@@ -25,6 +25,10 @@ struct Args {
     // human readable output
     #[clap(short, long, value_parser, default_value = "false")]
     human: bool,
+
+    // verbose output
+    #[clap(short, long, value_parser, default_value = "false")]
+    verbose: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -50,18 +54,31 @@ fn main() {
         .unwrap_or_else(|| default_replit_nix_filepath.to_string());
 
     let human_readable = args.human;
+    let verbose = args.verbose;
 
     // if user explicitly passes in a add or remove dep, then we only handle that specific op
     if let Some(add_dep) = args.add {
-        let (status, data) = perform_op("add", Some(add_dep), &replit_nix_filepath);
+        if verbose {
+            println!("add_dep");
+        }
+
+        let (status, data) = perform_op("add", Some(add_dep), &replit_nix_filepath, verbose);
         send_res(&status, data, human_readable);
         return;
     }
 
     if let Some(remove_dep) = args.remove {
-        let (status, data) = perform_op("remove", Some(remove_dep), &replit_nix_filepath);
+        if verbose {
+            println!("remove_dep");
+        }
+
+        let (status, data) = perform_op("remove", Some(remove_dep), &replit_nix_filepath, verbose);
         send_res(&status, data, human_readable);
         return;
+    }
+
+    if verbose {
+        println!("reading from stdin");
     }
 
     let stdin = io::stdin();
@@ -76,7 +93,7 @@ fn main() {
                     }
                 };
 
-                let (status, data) = perform_op(&json.op, json.dep, &replit_nix_filepath);
+                let (status, data) = perform_op(&json.op, json.dep, &replit_nix_filepath, verbose);
                 send_res(&status, data, human_readable);
             }
             Err(_) => {
@@ -94,7 +111,12 @@ fn perform_op(
     op: &str,
     dep: Option<String>,
     replit_nix_filepath: &String,
+    verbose: bool,
 ) -> (String, Option<String>) {
+    if verbose {
+        println!("perform_op: {} {:?}", op, dep);
+    }
+
     // read replit.nix file
     let mut contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
