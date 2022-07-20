@@ -1,15 +1,13 @@
-{ stdenv, git, runCommand, copyPathToStore, rev, lib, defaultCrateOverrides, buildRustCrate, buildPackages, fetchurl }@pkgs:
-let
-  generatedBuild = import ./Cargo.nix { inherit pkgs; };
-  crate2nix = generatedBuild.workspaceMembers.nix-editor.build;
-in stdenv.mkDerivation {
+{ rustPlatform, rev }:
+
+rustPlatform.buildRustPackage {
     pname = "nix-editor";
     version = rev;
 
-    src = crate2nix;
+    cargoLock = {
+      lockFile = ./Cargo.lock;
+    };
 
-    installPhase = ''
-      cp -r ${crate2nix} $out
-    '';
+    src = ./.;
 }
 
