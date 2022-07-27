@@ -234,23 +234,11 @@ fn add_dep(
         None => bail!("error: no new dependency"),
     };
 
-    let open_bracket_pos: usize = match deps_list.first_token() {
-        Some(token) => token.text_range().start().into(),
-        None => bail!("error: could not find first bracket token in deps list"),
-    };
-
     // add dep pos is the character position of the first character of the new dependency
     let add_dep_pos = calc_add_dep_pos(deps_list);
-
-    // we need to add leading whitespace to the next line so that
-    // the pkgs are correctly formatted (i.e. they are lined up)
-    let white_space_count = add_dep_pos - open_bracket_pos - 2;
-    let leading_white_space = " ".repeat(white_space_count);
-
     let new_contents = contents.split_off(add_dep_pos);
     contents.push_str(&new_dep);
     contents.push('\n');
-    contents.push_str(&leading_white_space);
     contents.push_str(&new_contents);
     Ok(contents.to_string())
 }
@@ -269,11 +257,7 @@ fn remove_dep(
         Ok(range_to_remove) => range_to_remove,
         Err(_) => bail!("error: could not find dep to remove"),
     };
-    let text_start: usize = range_to_remove.start().into();
-
-    // since there may be leading white space, we need to remove the leading white space
-    // go backwards char by char until we find non whitespace char 
-    let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
+    let remove_start: usize = range_to_remove.start().into();
     let remove_end: usize = range_to_remove.end().into();
 
     let new_contents = contents.split_off(remove_start);
@@ -284,18 +268,6 @@ fn remove_dep(
     contents.push_str(&end_section);
 
     Ok(contents.to_string())
-}
-
-fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
-    let mut pos = start_pos;
-    while pos > 0 {
-        let c = contents.chars().nth(pos - 1).unwrap();
-        if !c.is_whitespace() {
-            return pos;
-        }
-        pos -= 1;
-    }
-    0
 }
 
 fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
