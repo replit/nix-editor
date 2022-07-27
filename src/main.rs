@@ -1,18 +1,12 @@
-use rnix::{parse, SyntaxNode, TextRange, SyntaxKind};
+use rnix::*;
 use std::fs;
 use std::{io, io::prelude::*};
-use std::error::Error;
 
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 
 use clap::Parser;
-
-macro_rules! bail {
-    ($e:expr) => {
-        return Err($e.into())
-    };
-}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -152,7 +146,7 @@ fn perform_op(
         }
     };
 
-    let ast = parse(&contents);
+    let ast = rnix::parse(&contents);
 
     let deps_list = match verify_get(ast.node()) {
         Ok(deps_list) => deps_list,
@@ -234,7 +228,7 @@ fn add_dep(
     contents: &mut String,
     deps_list: SyntaxNode,
     new_dep_opt: Option<String>,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String> {
     let new_dep = match new_dep_opt {
         Some(new_dep) => new_dep,
         None => bail!("error: no new dependency"),
@@ -265,7 +259,7 @@ fn remove_dep(
     contents: &mut String,
     deps_list: SyntaxNode,
     remove_dep_opt: Option<String>,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String> {
     let remove_dep = match remove_dep_opt {
         Some(remove_dep) => remove_dep,
         None => bail!("error: no dependency to remove"),
@@ -304,14 +298,14 @@ fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
     0
 }
 
-fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>, Box<dyn Error>> {
+fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
     Ok(deps_list
         .children()
         .map(|child| child.text().to_string())
         .collect())
 }
 
-fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange, Box<dyn Error>> {
+fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange> {
     let mut deps = deps_list.children();
 
     let dep = match deps.find(|dep| dep.text() == remove_dep) {
@@ -362,12 +356,16 @@ fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
     })
 }
 
-fn verify_get(root: SyntaxNode) -> Result<SyntaxNode, Box<dyn Error>> {
+fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
     // kind of like assert! but returns an error instead of panicking
     macro_rules! verify_eq {
         ($a:expr, $b:expr) => {
             if $a != $b {
-                bail!(format!("error: expected {}, got {}", stringify!($b), stringify!($a)));
+                bail!(
+                    "error: expected {} but got {}",
+                    stringify!($b),
+                    stringify!($a)
+                );
             }
         };
     }
