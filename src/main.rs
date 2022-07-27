@@ -244,7 +244,7 @@ fn add_dep(
 
     // we need to add leading whitespace to the next line so that
     // the pkgs are correctly formatted (i.e. they are lined up)
-    let white_space_count = add_dep_pos - open_bracket_pos - 2;
+    let white_space_count = if add_dep_pos >= 2 + open_bracket_pos { add_dep_pos - open_bracket_pos - 2 } else { 0 };
     let leading_white_space = " ".repeat(white_space_count);
 
     let new_contents = contents.split_off(add_dep_pos);
