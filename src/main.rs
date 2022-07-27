@@ -1,10 +1,9 @@
 use rnix::*;
 use std::fs;
-use std::{io, io::prelude::*};
+use std::{io, io::prelude::*, io::Error, io::ErrorKind};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
-use anyhow::{bail, Result};
 
 use clap::Parser;
 
@@ -32,21 +31,9 @@ struct Args {
     verbose: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-enum OpKind {
-    #[serde(rename = "add")]
-    Add,
-
-    #[serde(rename = "remove")]
-    Remove,
-
-    #[serde(rename = "get")]
-    Get,
-}
-
 #[derive(Serialize, Deserialize)]
 struct Op {
-    op: OpKind,
+    op: String,
     dep: Option<String>,
 }
 
@@ -75,7 +62,7 @@ fn main() {
             println!("add_dep");
         }
 
-        let (status, data) = perform_op(OpKind::Add, Some(add_dep), &replit_nix_filepath, verbose);
+        let (status, data) = perform_op("add", Some(add_dep), &replit_nix_filepath, verbose);
         send_res(&status, data, human_readable);
         return;
     }
@@ -85,7 +72,7 @@ fn main() {
             println!("remove_dep");
         }
 
-        let (status, data) = perform_op(OpKind::Remove, Some(remove_dep), &replit_nix_filepath, verbose);
+        let (status, data) = perform_op("remove", Some(remove_dep), &replit_nix_filepath, verbose);
         send_res(&status, data, human_readable);
         return;
     }
@@ -106,7 +93,7 @@ fn main() {
                     }
                 };
 
-                let (status, data) = perform_op(json.op, json.dep, &replit_nix_filepath, verbose);
+                let (status, data) = perform_op(&json.op, json.dep, &replit_nix_filepath, verbose);
                 send_res(&status, data, human_readable);
             }
             Err(_) => {
@@ -121,13 +108,13 @@ fn main() {
 }
 
 fn perform_op(
-    op: OpKind,
+    op: &str,
     dep: Option<String>,
     replit_nix_filepath: &String,
     verbose: bool,
 ) -> (String, Option<String>) {
     if verbose {
-        println!("perform_op: {:?} {:?}", op, dep);
+        println!("perform_op: {} {:?}", op, dep);
     }
 
     // read replit.nix file
@@ -154,9 +141,9 @@ fn perform_op(
     };
 
     let op_res = match op {
-        OpKind::Add => add_dep(&mut contents, deps_list, dep),
-        OpKind::Remove => remove_dep(&mut contents, deps_list, dep),
-        OpKind::Get => {
+        "add" => add_dep(&mut contents, deps_list, dep),
+        "remove" => remove_dep(&mut contents, deps_list, dep),
+        "get" => {
             let deps = match get_deps(deps_list) {
                 Ok(deps) => deps,
                 Err(_) => {
@@ -164,7 +151,13 @@ fn perform_op(
                 }
             };
             return ("success".to_string(), Some(deps.join(",")));
-        },
+        }
+        unknown_op => {
+            return (
+                "error".to_string(),
+                Some(format!("Unknown operation {}", unknown_op)),
+            );
+        }
     };
 
     let new_contents = match op_res {
@@ -223,10 +216,12 @@ fn add_dep(
     contents: &mut String,
     deps_list: SyntaxNode,
     new_dep_opt: Option<String>,
-) -> Result<String> {
+) -> Result<String, Error> {
     let new_dep = match new_dep_opt {
         Some(new_dep) => new_dep,
-        None => bail!("error: no new dependency")
+        None => {
+            return Err(Error::new(ErrorKind::Other, "no new dependency"));
+        }
     };
 
     // add dep pos is the character position of the first character of the new dependency
@@ -242,15 +237,25 @@ fn remove_dep(
     contents: &mut String,
     deps_list: SyntaxNode,
     remove_dep_opt: Option<String>,
-) -> Result<String> {
+) -> Result<String, Error> {
     let remove_dep = match remove_dep_opt {
         Some(remove_dep) => remove_dep,
-        None => bail!("error: no dependency to remove"),
+        None => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "error: no dependency to remove",
+            ));
+        }
     };
 
     let range_to_remove = match find_remove_dep(deps_list, &remove_dep) {
         Ok(range_to_remove) => range_to_remove,
-        Err(_) => bail!("error: could not find dep to remove"),
+        Err(_) => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "error: could not find dependency to remove",
+            ));
+        }
     };
     let remove_start: usize = range_to_remove.start().into();
     let remove_end: usize = range_to_remove.end().into();
@@ -265,19 +270,21 @@ fn remove_dep(
     Ok(contents.to_string())
 }
 
-fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
+fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>, Error> {
     Ok(deps_list
         .children()
         .map(|child| child.text().to_string())
         .collect())
 }
 
-fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange> {
+fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange, Error> {
     let mut deps = deps_list.children();
 
     let dep = match deps.find(|dep| dep.text() == remove_dep) {
         Some(dep) => dep,
-        None => bail!("error: could not find def"),
+        None => {
+            return Err(Error::new(ErrorKind::Other, "Could not find dependency"));
+        }
     };
 
     Ok(dep.text_range())
@@ -323,12 +330,12 @@ fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
     })
 }
 
-fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
+fn verify_get(root: SyntaxNode) -> Result<SyntaxNode, Error> {
     // kind of like assert! but returns an error instead of panicking
     macro_rules! verify_eq {
         ($a:expr, $b:expr) => {
             if $a != $b {
-                bail!("error: expected {} but got {}", stringify!($b), stringify!($a));
+                return Err(Error::new(ErrorKind::Other, "Expected equal"));
             }
         };
     }
@@ -337,7 +344,7 @@ fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
         ($e:expr) => {
             match $e {
                 Some(e) => e,
-                None => bail!("error: expected some"),
+                None => return Err(Error::new(ErrorKind::Other, "Expected Some")),
             }
         };
     }
@@ -351,7 +358,7 @@ fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
     verify_eq!(arg_pattern.kind(), SyntaxKind::NODE_PATTERN);
 
     if find_child_with_value(&arg_pattern, "pkgs").is_none() {
-        bail!("error: expected pkgs");
+        return Err(Error::new(ErrorKind::Other, "Expected pkgs"));
     }
 
     let attr_set = unwrap_or_return!(get_nth_child(&lambda, 1));
