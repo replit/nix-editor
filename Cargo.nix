@@ -490,7 +490,7 @@ rec {
       };
       "nix-editor" = rec {
         crateName = "nix-editor";
-        version = "0.1.0";
+        version = "0.2.0";
         edition = "2018";
         crateBin = [
           { name = "nix-editor"; path = "src/main.rs"; }
