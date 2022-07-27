@@ -2,9 +2,9 @@ use rnix::*;
 use std::fs;
 use std::{io, io::prelude::*};
 
-use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
+use anyhow::{bail, Result};
 
 use clap::Parser;
 
@@ -85,12 +85,7 @@ fn main() {
             println!("remove_dep");
         }
 
-        let (status, data) = perform_op(
-            OpKind::Remove,
-            Some(remove_dep),
-            &replit_nix_filepath,
-            verbose,
-        );
+        let (status, data) = perform_op(OpKind::Remove, Some(remove_dep), &replit_nix_filepath, verbose);
         send_res(&status, data, human_readable);
         return;
     }
@@ -128,7 +123,7 @@ fn main() {
 fn perform_op(
     op: OpKind,
     dep: Option<String>,
-    replit_nix_filepath: &str,
+    replit_nix_filepath: &String,
     verbose: bool,
 ) -> (String, Option<String>) {
     if verbose {
@@ -169,7 +164,7 @@ fn perform_op(
                 }
             };
             return ("success".to_string(), Some(deps.join(",")));
-        }
+        },
     };
 
     let new_contents = match op_res {
@@ -231,7 +226,7 @@ fn add_dep(
 ) -> Result<String> {
     let new_dep = match new_dep_opt {
         Some(new_dep) => new_dep,
-        None => bail!("error: no new dependency"),
+        None => bail!("error: no new dependency")
     };
 
     // add dep pos is the character position of the first character of the new dependency
@@ -333,11 +328,7 @@ fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
     macro_rules! verify_eq {
         ($a:expr, $b:expr) => {
             if $a != $b {
-                bail!(
-                    "error: expected {} but got {}",
-                    stringify!($b),
-                    stringify!($a)
-                );
+                bail!("error: expected {} but got {}", stringify!($b), stringify!($a));
             }
         };
     }
