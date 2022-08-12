@@ -1,3 +1,5 @@
+mod verify_getter;
+
 use rnix::*;
 use std::fs;
 use std::{io, io::prelude::*};
@@ -6,7 +8,9 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 
-use clap::Parser;
+use clap::{ArgEnum, Parser};
+
+use crate::verify_getter::verify_get;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -27,6 +31,10 @@ struct Args {
     #[clap(short, long, value_parser, default_value = "false")]
     human: bool,
 
+    // dep type - used for setting special dep types in the replit.nix file
+    #[clap(short, long, arg_enum, default_value = "regular")]
+    dep_type: DepType,
+
     // verbose output
     #[clap(short, long, value_parser, default_value = "false")]
     verbose: bool,
@@ -44,9 +52,19 @@ enum OpKind {
     Get,
 }
 
+#[derive(Serialize, Deserialize, ArgEnum, Clone, Copy, Debug)]
+pub enum DepType {
+    #[serde(rename = "regular")]
+    Regular,
+
+    #[serde(rename = "python")]
+    Python,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Op {
     op: OpKind,
+    dep_type: Option<DepType>,
     dep: Option<String>,
 }
 
@@ -75,7 +93,13 @@ fn main() {
             println!("add_dep");
         }
 
-        let (status, data) = perform_op(OpKind::Add, Some(add_dep), &replit_nix_filepath, verbose);
+        let (status, data) = perform_op(
+            OpKind::Add,
+            Some(add_dep),
+            args.dep_type,
+            &replit_nix_filepath,
+            verbose,
+        );
         send_res(&status, data, human_readable);
         return;
     }
@@ -88,6 +112,7 @@ fn main() {
         let (status, data) = perform_op(
             OpKind::Remove,
             Some(remove_dep),
+            args.dep_type,
             &replit_nix_filepath,
             verbose,
         );
@@ -111,7 +136,13 @@ fn main() {
                     }
                 };
 
-                let (status, data) = perform_op(json.op, json.dep, &replit_nix_filepath, verbose);
+                let (status, data) = perform_op(
+                    json.op,
+                    json.dep,
+                    json.dep_type.unwrap_or(args.dep_type),
+                    &replit_nix_filepath,
+                    verbose,
+                );
                 send_res(&status, data, human_readable);
             }
             Err(_) => {
@@ -128,6 +159,7 @@ fn main() {
 fn perform_op(
     op: OpKind,
     dep: Option<String>,
+    dep_type: DepType,
     replit_nix_filepath: &str,
     verbose: bool,
 ) -> (String, Option<String>) {
@@ -148,7 +180,7 @@ fn perform_op(
 
     let ast = rnix::parse(&contents);
 
-    let deps_list = match verify_get(ast.node()) {
+    let deps_list = match verify_get(ast.node(), dep_type) {
         Ok(deps_list) => deps_list,
         Err(_) => {
             return (
@@ -244,7 +276,11 @@ fn add_dep(
 
     // we need to add leading whitespace to the next line so that
     // the pkgs are correctly formatted (i.e. they are lined up)
-    let white_space_count = if add_dep_pos >= 2 + open_bracket_pos { add_dep_pos - open_bracket_pos - 2 } else { 0 };
+    let white_space_count = if add_dep_pos >= 2 + open_bracket_pos {
+        add_dep_pos - open_bracket_pos - 2
+    } else {
+        0
+    };
     let leading_white_space = " ".repeat(white_space_count);
 
     let new_contents = contents.split_off(add_dep_pos);
@@ -272,7 +308,7 @@ fn remove_dep(
     let text_start: usize = range_to_remove.start().into();
 
     // since there may be leading white space, we need to remove the leading white space
-    // go backwards char by char until we find non whitespace char 
+    // go backwards char by char until we find non whitespace char
     let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
     let remove_end: usize = range_to_remove.end().into();
 
@@ -325,80 +361,4 @@ fn calc_add_dep_pos(deps_list: SyntaxNode) -> usize {
         let deps_list_start: usize = deps_list.text_range().start().into();
         deps_list_start + 1
     }
-}
-
-fn get_nth_child(node: &SyntaxNode, index: usize) -> Option<SyntaxNode> {
-    node.children().into_iter().nth(index)
-}
-
-fn find_child_with_value(node: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
-    node.children()
-        .into_iter()
-        .find(|child| child.text() == name)
-}
-
-fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
-    if node.kind() != SyntaxKind::NODE_ATTR_SET {
-        return None;
-    }
-
-    node.children().into_iter().find(|child| {
-        if child.kind() != SyntaxKind::NODE_KEY_VALUE {
-            return false;
-        }
-
-        let key_node = match get_nth_child(child, 0) {
-            Some(child) => child,
-            None => return false,
-        };
-
-        key_node.text() == key
-    })
-}
-
-fn verify_get(root: SyntaxNode) -> Result<SyntaxNode> {
-    // kind of like assert! but returns an error instead of panicking
-    macro_rules! verify_eq {
-        ($a:expr, $b:expr) => {
-            if $a != $b {
-                bail!(
-                    "error: expected {} but got {}",
-                    stringify!($b),
-                    stringify!($a)
-                );
-            }
-        };
-    }
-
-    macro_rules! unwrap_or_return {
-        ($e:expr) => {
-            match $e {
-                Some(e) => e,
-                None => bail!("error: expected some"),
-            }
-        };
-    }
-
-    verify_eq!(root.kind(), SyntaxKind::NODE_ROOT);
-
-    let lambda = unwrap_or_return!(get_nth_child(&root, 0));
-    verify_eq!(lambda.kind(), SyntaxKind::NODE_LAMBDA);
-
-    let arg_pattern = unwrap_or_return!(get_nth_child(&lambda, 0));
-    verify_eq!(arg_pattern.kind(), SyntaxKind::NODE_PATTERN);
-
-    if find_child_with_value(&arg_pattern, "pkgs").is_none() {
-        bail!("error: expected pkgs");
-    }
-
-    let attr_set = unwrap_or_return!(get_nth_child(&lambda, 1));
-    verify_eq!(attr_set.kind(), SyntaxKind::NODE_ATTR_SET);
-
-    let deps = unwrap_or_return!(find_key_value_with_key(&attr_set, "deps"));
-    verify_eq!(deps.kind(), SyntaxKind::NODE_KEY_VALUE);
-
-    let deps_list = unwrap_or_return!(get_nth_child(&deps, 1));
-    verify_eq!(deps_list.kind(), SyntaxKind::NODE_LIST);
-
-    Ok(deps_list)
 }
