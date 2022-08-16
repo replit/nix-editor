@@ -1,15 +1,20 @@
+mod adder;
+mod remover;
 mod verify_getter;
 
-use rnix::*;
+use anyhow::Result;
+use rnix::SyntaxNode;
+
 use std::fs;
 use std::{io, io::prelude::*};
 
-use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 
 use clap::{ArgEnum, Parser};
 
+use crate::adder::add_dep;
+use crate::remover::remove_dep;
 use crate::verify_getter::verify_get;
 
 #[derive(Parser, Debug)]
@@ -256,109 +261,9 @@ fn send_res(status: &str, data: Option<String>, human_readable: bool) {
     println!("{}", json);
 }
 
-fn add_dep(
-    contents: &mut String,
-    deps_list: SyntaxNode,
-    new_dep_opt: Option<String>,
-) -> Result<String> {
-    let new_dep = match new_dep_opt {
-        Some(new_dep) => new_dep,
-        None => bail!("error: no new dependency"),
-    };
-
-    let open_bracket_pos: usize = match deps_list.first_token() {
-        Some(token) => token.text_range().start().into(),
-        None => bail!("error: could not find first bracket token in deps list"),
-    };
-
-    // add dep pos is the character position of the first character of the new dependency
-    let add_dep_pos = calc_add_dep_pos(deps_list);
-
-    // we need to add leading whitespace to the next line so that
-    // the pkgs are correctly formatted (i.e. they are lined up)
-    let white_space_count = if add_dep_pos >= 2 + open_bracket_pos {
-        add_dep_pos - open_bracket_pos - 2
-    } else {
-        0
-    };
-    let leading_white_space = " ".repeat(white_space_count);
-
-    let new_contents = contents.split_off(add_dep_pos);
-    contents.push_str(&new_dep);
-    contents.push('\n');
-    contents.push_str(&leading_white_space);
-    contents.push_str(&new_contents);
-    Ok(contents.to_string())
-}
-
-fn remove_dep(
-    contents: &mut String,
-    deps_list: SyntaxNode,
-    remove_dep_opt: Option<String>,
-) -> Result<String> {
-    let remove_dep = match remove_dep_opt {
-        Some(remove_dep) => remove_dep,
-        None => bail!("error: no dependency to remove"),
-    };
-
-    let range_to_remove = match find_remove_dep(deps_list, &remove_dep) {
-        Ok(range_to_remove) => range_to_remove,
-        Err(_) => bail!("error: could not find dep to remove"),
-    };
-    let text_start: usize = range_to_remove.start().into();
-
-    // since there may be leading white space, we need to remove the leading white space
-    // go backwards char by char until we find non whitespace char
-    let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
-    let remove_end: usize = range_to_remove.end().into();
-
-    let new_contents = contents.split_off(remove_start);
-    let end_section = new_contents
-        .chars()
-        .skip(remove_end - remove_start)
-        .collect::<String>();
-    contents.push_str(&end_section);
-
-    Ok(contents.to_string())
-}
-
-fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
-    let mut pos = start_pos;
-    while pos > 0 {
-        let c = contents.chars().nth(pos - 1).unwrap();
-        if !c.is_whitespace() {
-            return pos;
-        }
-        pos -= 1;
-    }
-    0
-}
-
 fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
     Ok(deps_list
         .children()
         .map(|child| child.text().to_string())
         .collect())
-}
-
-fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange> {
-    let mut deps = deps_list.children();
-
-    let dep = match deps.find(|dep| dep.text() == remove_dep) {
-        Some(dep) => dep,
-        None => bail!("error: could not find def"),
-    };
-
-    Ok(dep.text_range())
-}
-
-fn calc_add_dep_pos(deps_list: SyntaxNode) -> usize {
-    // get the first child of the deps_list
-    // we want to add the new dep right before the first one
-    if let Some(first_dep) = deps_list.first_child() {
-        first_dep.text_range().start().into()
-    } else {
-        let deps_list_start: usize = deps_list.text_range().start().into();
-        deps_list_start + 1
-    }
 }
