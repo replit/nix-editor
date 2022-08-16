@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use rnix::*;
 
 use crate::DepType;
@@ -16,15 +16,6 @@ macro_rules! verify_eq {
     };
 }
 
-macro_rules! unwrap_or_return {
-    ($e:expr) => {
-        match $e {
-            Some(e) => e,
-            None => bail!("error: expected some"),
-        }
-    };
-}
-
 // Will try to parse through the AST and return a list of deps
 // If at any point, the tree is not *exactly* how we expect it to look,
 // it will return an error. Since nix is so complex, we have to require some
@@ -32,17 +23,17 @@ macro_rules! unwrap_or_return {
 pub fn verify_get(root: SyntaxNode, dep_type: DepType) -> Result<SyntaxNode> {
     verify_eq!(root.kind(), SyntaxKind::NODE_ROOT);
 
-    let lambda = unwrap_or_return!(get_nth_child(&root, 0));
+    let lambda = get_nth_child(&root, 0).context("expected to have a child")?;
     verify_eq!(lambda.kind(), SyntaxKind::NODE_LAMBDA);
 
-    let arg_pattern = unwrap_or_return!(get_nth_child(&lambda, 0));
+    let arg_pattern = get_nth_child(&lambda, 0).context("expected to have a child")?;
     verify_eq!(arg_pattern.kind(), SyntaxKind::NODE_PATTERN);
 
     if find_child_with_value(&arg_pattern, "pkgs").is_none() {
         bail!("error: expected pkgs");
     }
 
-    let attr_set = unwrap_or_return!(get_nth_child(&lambda, 1));
+    let attr_set = get_nth_child(&lambda, 1).context("expected to have two children")?;
     verify_eq!(attr_set.kind(), SyntaxKind::NODE_ATTR_SET);
 
     let deps_list = match dep_type {
@@ -54,36 +45,35 @@ pub fn verify_get(root: SyntaxNode, dep_type: DepType) -> Result<SyntaxNode> {
 }
 
 fn verify_get_regular(attr_set: SyntaxNode) -> Result<SyntaxNode> {
-    let deps = unwrap_or_return!(find_key_value_with_key(&attr_set, "deps"));
+    let deps = find_key_value_with_key(&attr_set, "deps").context("expected to have a deps key")?;
     verify_eq!(deps.kind(), SyntaxKind::NODE_KEY_VALUE);
 
-    let deps_list = unwrap_or_return!(get_nth_child(&deps, 1));
+    let deps_list = get_nth_child(&deps, 1).context("expected to have two children")?;
     verify_eq!(deps_list.kind(), SyntaxKind::NODE_LIST);
 
     Ok(deps_list)
 }
 
 fn verify_get_python(attr_set: SyntaxNode) -> Result<SyntaxNode> {
-    let env = unwrap_or_return!(find_key_value_with_key(&attr_set, "env"));
+    let env = find_key_value_with_key(&attr_set, "env").context("expected to have an env key")?;
     verify_eq!(env.kind(), SyntaxKind::NODE_KEY_VALUE);
 
-    let env_attr_set = unwrap_or_return!(get_nth_child(&env, 1));
+    let env_attr_set = get_nth_child(&env, 1).context("expected to have two children")?;
     verify_eq!(env_attr_set.kind(), SyntaxKind::NODE_ATTR_SET);
 
-    let py_lib_path = unwrap_or_return!(find_key_value_with_key(
-        &env_attr_set,
-        "PYTHON_LD_LIBRARY_PATH"
-    ));
+    let py_lib_path = find_key_value_with_key(&env_attr_set, "PYTHON_LD_LIBRARY_PATH")
+        .context("expected to have a PYTHON_LD_LIBRARY_PATH key")?;
     verify_eq!(py_lib_path.kind(), SyntaxKind::NODE_KEY_VALUE);
 
-    let py_lib_apply = unwrap_or_return!(get_nth_child(&py_lib_path, 1));
+    let py_lib_apply = get_nth_child(&py_lib_path, 1).context("expected to have two children")?;
     verify_eq!(py_lib_apply.kind(), SyntaxKind::NODE_APPLY);
 
-    let py_lib_node_select = unwrap_or_return!(get_nth_child(&py_lib_apply, 0));
+    let py_lib_node_select = get_nth_child(&py_lib_apply, 0).context("expected to have a child")?;
     verify_eq!(py_lib_node_select.kind(), SyntaxKind::NODE_SELECT);
     verify_eq!(py_lib_node_select.text(), "pkgs.lib.makeLibraryPath");
 
-    let py_lib_node_list = unwrap_or_return!(get_nth_child(&py_lib_apply, 1));
+    let py_lib_node_list =
+        get_nth_child(&py_lib_apply, 1).context("expected to have two children")?;
     verify_eq!(py_lib_node_list.kind(), SyntaxKind::NODE_LIST);
 
     Ok(py_lib_node_list)
