@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Context, Result};
 use rnix::SyntaxNode;
 
 pub fn add_dep(
@@ -6,15 +6,12 @@ pub fn add_dep(
     deps_list: SyntaxNode,
     new_dep_opt: Option<String>,
 ) -> Result<String> {
-    let new_dep = match new_dep_opt {
-        Some(new_dep) => new_dep,
-        None => bail!("error: no new dependency"),
-    };
+    let new_dep = new_dep_opt.context("error: no dependency")?;
 
-    let open_bracket_pos: usize = match deps_list.first_token() {
-        Some(token) => token.text_range().start().into(),
-        None => bail!("error: could not find first bracket token in deps list"),
-    };
+    let dep_list_first_token = deps_list
+        .first_token()
+        .context("error: could not find first bracket token in deps list")?;
+    let open_bracket_pos: usize = dep_list_first_token.text_range().start().into();
 
     // add dep pos is the character position of the first character of the new dependency
     let add_dep_pos = calc_add_dep_pos(deps_list);

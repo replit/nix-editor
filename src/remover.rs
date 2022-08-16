@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Context, Result};
 use rnix::{SyntaxNode, TextRange};
 
 pub fn remove_dep(
@@ -6,15 +6,10 @@ pub fn remove_dep(
     deps_list: SyntaxNode,
     remove_dep_opt: Option<String>,
 ) -> Result<String> {
-    let remove_dep = match remove_dep_opt {
-        Some(remove_dep) => remove_dep,
-        None => bail!("error: no dependency to remove"),
-    };
+    let remove_dep = remove_dep_opt.context("error: expected dep to remove")?;
 
-    let range_to_remove = match find_remove_dep(deps_list, &remove_dep) {
-        Ok(range_to_remove) => range_to_remove,
-        Err(_) => bail!("error: could not find dep to remove"),
-    };
+    let range_to_remove = find_remove_dep(deps_list, &remove_dep)
+        .context("error: could not find dependency to remove")?;
     let text_start: usize = range_to_remove.start().into();
 
     // since there may be leading white space, we need to remove the leading white space
@@ -47,10 +42,9 @@ fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
 fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange> {
     let mut deps = deps_list.children();
 
-    let dep = match deps.find(|dep| dep.text() == remove_dep) {
-        Some(dep) => dep,
-        None => bail!("error: could not find def"),
-    };
+    let dep = deps
+        .find(|dep| dep.text() == remove_dep)
+        .context("error: could not find dep to remove")?;
 
     Ok(dep.text_range())
 }
