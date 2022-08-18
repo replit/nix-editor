@@ -71,7 +71,7 @@ pub enum DepType {
     Python,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Op {
     op: OpKind,
     dep_type: Option<DepType>,
@@ -103,10 +103,14 @@ fn main() {
             println!("add_dep");
         }
 
+        let new_op = Op {
+            op: OpKind::Add,
+            dep_type: Some(args.dep_type),
+            dep: Some(add_dep),
+        };
+
         let (status, data) = perform_op(
-            OpKind::Add,
-            Some(add_dep),
-            args.dep_type,
+            vec![new_op],
             &replit_nix_filepath,
             verbose,
             args.return_output,
@@ -120,10 +124,14 @@ fn main() {
             println!("remove_dep");
         }
 
+        let new_op: Op = Op {
+            op: OpKind::Remove,
+            dep_type: Some(args.dep_type),
+            dep: Some(remove_dep),
+        };
+
         let (status, data) = perform_op(
-            OpKind::Remove,
-            Some(remove_dep),
-            args.dep_type,
+            vec![new_op],
             &replit_nix_filepath,
             verbose,
             args.return_output,
@@ -140,7 +148,7 @@ fn main() {
     for line in stdin.lock().lines() {
         match line {
             Ok(line) => {
-                let json: Op = match from_str(&line) {
+                let json: Vec<Op> = match from_str(&line) {
                     Ok(json_val) => json_val,
                     Err(_) => {
                         send_res("error", Some("Invalid JSON".to_string()), human_readable);
@@ -148,14 +156,8 @@ fn main() {
                     }
                 };
 
-                let (status, data) = perform_op(
-                    json.op,
-                    json.dep,
-                    json.dep_type.unwrap_or(args.dep_type),
-                    &replit_nix_filepath,
-                    verbose,
-                    args.return_output,
-                );
+                let (status, data) =
+                    perform_op(json, &replit_nix_filepath, verbose, args.return_output);
                 send_res(&status, data, human_readable);
             }
             Err(_) => {
@@ -170,15 +172,13 @@ fn main() {
 }
 
 fn perform_op(
-    op: OpKind,
-    dep: Option<String>,
-    dep_type: DepType,
+    ops: Vec<Op>,
     replit_nix_filepath: &str,
     verbose: bool,
     return_output: bool,
 ) -> (String, Option<String>) {
     if verbose {
-        println!("perform_op: {:?} {:?}", op, dep);
+        println!("perform_ops: {:?}", ops);
     }
 
     // read replit.nix file
@@ -192,48 +192,54 @@ fn perform_op(
         }
     };
 
-    let ast = rnix::parse(&contents);
+    for op_to_perform in ops {
+        let dep_type = op_to_perform.dep_type.unwrap_or(DepType::Regular);
+        let op = op_to_perform.op;
+        let dep = op_to_perform.dep;
 
-    let deps_list = match verify_get(ast.node(), dep_type) {
-        Ok(deps_list) => deps_list,
-        Err(_) => {
-            return (
-                "error".to_string(),
-                Some("Could not verify and get".to_string()),
-            );
-        }
-    };
+        let ast = rnix::parse(&contents);
 
-    let op_res = match op {
-        OpKind::Add => add_dep(&mut contents, deps_list, dep),
-        OpKind::Remove => remove_dep(&mut contents, deps_list, dep),
-        OpKind::Get => {
-            let deps = match get_deps(deps_list) {
-                Ok(deps) => deps,
-                Err(_) => {
-                    return ("error".to_string(), Some("Could not get deps".to_string()));
-                }
-            };
-            return ("success".to_string(), Some(deps.join(",")));
-        }
-    };
+        let deps_list = match verify_get(ast.node(), dep_type) {
+            Ok(deps_list) => deps_list,
+            Err(_) => {
+                return (
+                    "error".to_string(),
+                    Some("Could not verify and get".to_string()),
+                );
+            }
+        };
 
-    let new_contents = match op_res {
-        Ok(new_contents) => new_contents,
-        Err(_) => {
-            return (
-                "error".to_string(),
-                Some("Could not perform op".to_string()),
-            );
-        }
-    };
+        let op_res = match op {
+            OpKind::Add => add_dep(&mut contents, deps_list, dep),
+            OpKind::Remove => remove_dep(&mut contents, deps_list, dep),
+            OpKind::Get => {
+                let deps = match get_deps(deps_list) {
+                    Ok(deps) => deps,
+                    Err(_) => {
+                        return ("error".to_string(), Some("Could not get deps".to_string()));
+                    }
+                };
+                return ("success".to_string(), Some(deps.join(",")));
+            }
+        };
+
+        contents = match op_res {
+            Ok(new_contents) => new_contents,
+            Err(_) => {
+                return (
+                    "error".to_string(),
+                    Some("Could not perform op".to_string()),
+                );
+            }
+        };
+    }
 
     if return_output {
-        return ("success".to_string(), Some(new_contents));
+        return ("success".to_string(), Some(contents));
     }
 
     // write new replit.nix file
-    match fs::write(&replit_nix_filepath, new_contents) {
+    match fs::write(&replit_nix_filepath, contents) {
         Ok(_) => ("success".to_string(), None),
         Err(_) => (
             "error".to_string(),
