@@ -43,6 +43,11 @@ struct Args {
     // verbose output
     #[clap(short, long, value_parser, default_value = "false")]
     verbose: bool,
+
+    // Whether or not to write this value directly to the file,
+    // or just print it as part of the return message
+    #[clap(long, value_parser, default_value = "false")]
+    return_output: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -104,6 +109,7 @@ fn main() {
             args.dep_type,
             &replit_nix_filepath,
             verbose,
+            args.return_output,
         );
         send_res(&status, data, human_readable);
         return;
@@ -120,6 +126,7 @@ fn main() {
             args.dep_type,
             &replit_nix_filepath,
             verbose,
+            args.return_output,
         );
         send_res(&status, data, human_readable);
         return;
@@ -147,6 +154,7 @@ fn main() {
                     json.dep_type.unwrap_or(args.dep_type),
                     &replit_nix_filepath,
                     verbose,
+                    args.return_output,
                 );
                 send_res(&status, data, human_readable);
             }
@@ -167,6 +175,7 @@ fn perform_op(
     dep_type: DepType,
     replit_nix_filepath: &str,
     verbose: bool,
+    return_output: bool,
 ) -> (String, Option<String>) {
     if verbose {
         println!("perform_op: {:?} {:?}", op, dep);
@@ -218,6 +227,10 @@ fn perform_op(
             );
         }
     };
+
+    if return_output {
+        return ("success".to_string(), Some(new_contents));
+    }
 
     // write new replit.nix file
     match fs::write(&replit_nix_filepath, new_contents) {
