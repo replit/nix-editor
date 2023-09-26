@@ -8,6 +8,13 @@ pub fn add_dep(
 ) -> Result<String> {
     let new_dep = new_dep_opt.context("error: no dependency")?;
 
+    for dep in deps_list.children() {
+        if dep.to_string() == new_dep {
+            // dep is already present in the deps_list, we're done
+            return Ok(contents.to_string());
+        }
+    }
+
     let dep_list_first_token = deps_list
         .first_token()
         .context("error: could not find first bracket token in deps list")?;
@@ -77,6 +84,26 @@ mod add_tests {
         r#"
 { pkgs }: {
   deps = [];
+}
+        "#,
+        r#"
+{ pkgs }: {
+  deps = [
+    pkgs.test
+  ];
+}
+        "#)
+    }
+
+    #[test]
+    fn test_duplicate_add() {
+        test_add(
+            "pkgs.test",
+        r#"
+{ pkgs }: {
+  deps = [
+    pkgs.test
+  ];
 }
         "#,
         r#"
