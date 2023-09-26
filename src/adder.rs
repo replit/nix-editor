@@ -21,11 +21,15 @@ pub fn add_dep(
     let white_space_count = if add_dep_pos >= 2 + open_bracket_pos {
         add_dep_pos - open_bracket_pos - 2
     } else {
-        0
+        2
     };
     let leading_white_space = " ".repeat(white_space_count);
 
     let new_contents = contents.split_off(add_dep_pos);
+    if add_dep_pos == open_bracket_pos + 1 {
+        contents.push('\n');
+        contents.push_str(&" ".repeat(4));
+    }
     contents.push_str(&new_dep);
     contents.push('\n');
     contents.push_str(&leading_white_space);
@@ -50,6 +54,39 @@ mod add_tests {
     use crate::verify_getter::verify_get;
     use crate::DepType;
     use rnix::parse;
+
+    fn test_add(new_dep: &str, initial_contents: &str, expected_contents: &str) {
+        let tree = parse(&initial_contents).node();
+        let deps_list_res = verify_get(tree, DepType::Regular);
+        assert!(deps_list_res.is_ok());
+
+        let deps_list = deps_list_res.unwrap();
+
+        let new_contents = add_dep(&mut initial_contents.to_string(), deps_list, Some(new_dep.to_string()));
+        assert!(new_contents.is_ok());
+
+        let new_contents = new_contents.unwrap();
+
+        assert_eq!(new_contents, expected_contents.to_string());
+    }
+
+    #[test]
+    fn test_empty_regular_add_dep() {
+        test_add(
+            "pkgs.test",
+        r#"
+{ pkgs }: {
+  deps = [];
+}
+        "#,
+        r#"
+{ pkgs }: {
+  deps = [
+    pkgs.test
+  ];
+}
+        "#)
+    }
 
     fn python_replit_nix() -> String {
         r#"
@@ -147,4 +184,5 @@ mod add_tests {
         .to_string();
         assert_eq!(new_contents, expected_contents);
     }
+
 }
