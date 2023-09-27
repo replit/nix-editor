@@ -189,12 +189,12 @@ fn perform_op(
     // read replit.nix file
     let mut contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
-        Err(_) => {
-            return (
-                "error".to_string(),
-                Some(format!("Could not read file {}", replit_nix_filepath)),
-            );
-        }
+        Err(_) => r#"
+{pkgs}:
+{
+  deps = [];
+}
+"#.to_string(),
     };
 
     let ast = rnix::parse(&contents);
