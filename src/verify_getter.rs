@@ -46,7 +46,7 @@ pub fn verify_get(root: SyntaxNode, dep_type: DepType) -> Result<SyntaxNode> {
 
 fn verify_get_regular(attr_set: SyntaxNode) -> Result<SyntaxNode> {
     let deps = find_key_value_with_key(&attr_set, "deps").context("expected to have a deps key")?;
-    verify_eq!(deps.kind(), SyntaxKind::NODE_KEY_VALUE);
+    verify_eq!(deps.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
 
     let deps_list = get_nth_child(&deps, 1).context("expected to have two children")?;
     verify_eq!(deps_list.kind(), SyntaxKind::NODE_LIST);
@@ -56,14 +56,14 @@ fn verify_get_regular(attr_set: SyntaxNode) -> Result<SyntaxNode> {
 
 fn verify_get_python(attr_set: SyntaxNode) -> Result<SyntaxNode> {
     let env = find_key_value_with_key(&attr_set, "env").context("expected to have an env key")?;
-    verify_eq!(env.kind(), SyntaxKind::NODE_KEY_VALUE);
+    verify_eq!(env.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
 
     let env_attr_set = get_nth_child(&env, 1).context("expected to have two children")?;
     verify_eq!(env_attr_set.kind(), SyntaxKind::NODE_ATTR_SET);
 
     let py_lib_path = find_key_value_with_key(&env_attr_set, "PYTHON_LD_LIBRARY_PATH")
         .context("expected to have a PYTHON_LD_LIBRARY_PATH key")?;
-    verify_eq!(py_lib_path.kind(), SyntaxKind::NODE_KEY_VALUE);
+    verify_eq!(py_lib_path.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
 
     let py_lib_apply = get_nth_child(&py_lib_path, 1).context("expected to have two children")?;
     verify_eq!(py_lib_apply.kind(), SyntaxKind::NODE_APPLY);
@@ -95,7 +95,7 @@ fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
     }
 
     node.children().into_iter().find(|child| {
-        if child.kind() != SyntaxKind::NODE_KEY_VALUE {
+        if child.kind() != SyntaxKind::NODE_ATTRPATH_VALUE {
             return false;
         }
 
@@ -112,7 +112,6 @@ fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNode> {
 #[cfg(test)]
 mod verify_get_tests {
     use super::*;
-    use rnix::parse;
 
     fn python_replit_nix_ast() -> SyntaxNode {
         let code = r#"
@@ -135,7 +134,7 @@ mod verify_get_tests {
   };
 }
         "#;
-        parse(code).node()
+        rnix::Root::parse(code).syntax()
     }
 
     #[test]

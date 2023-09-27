@@ -60,10 +60,9 @@ mod add_tests {
     use super::*;
     use crate::verify_getter::verify_get;
     use crate::DepType;
-    use rnix::parse;
 
     fn test_add(new_dep: &str, initial_contents: &str, expected_contents: &str) {
-        let tree = parse(&initial_contents).node();
+        let tree = rnix::Root::parse(&initial_contents).syntax();
         let deps_list_res = verify_get(tree, DepType::Regular);
         assert!(deps_list_res.is_ok());
 
@@ -139,7 +138,7 @@ mod add_tests {
     #[test]
     fn test_regular_add_dep() {
         let mut contents = python_replit_nix();
-        let tree = parse(&contents).node();
+        let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(tree, DepType::Regular);
         assert!(deps_list_res.is_ok());
 
@@ -177,7 +176,7 @@ mod add_tests {
     #[test]
     fn test_python_add_dep() {
         let mut contents = python_replit_nix();
-        let tree = parse(&contents).node();
+        let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(tree, DepType::Python);
         assert!(deps_list_res.is_ok());
 
