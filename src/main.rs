@@ -6,7 +6,7 @@ use anyhow::Result;
 use rnix::SyntaxNode;
 
 use std::fs;
-use std::{io, io::prelude::*};
+use std::{io, io::prelude::*, path::Path, env};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
@@ -85,14 +85,19 @@ struct Res {
 }
 
 fn main() {
-    let default_replit_nix_filepath = "replit.nix";
+    let replit_nix_file = "./replit.nix";
+    let default_replit_nix_filepath : String = match env::var("REPL_HOME") {
+        Ok(repl_home) => Path::new(repl_home.as_str()).
+            join(replit_nix_file).to_str().unwrap().to_string(),
+        Err(_) => replit_nix_file.to_string(),
+    };
 
     // handle command line args
     let args = Args::parse();
 
     let replit_nix_filepath = args
         .path
-        .unwrap_or_else(|| default_replit_nix_filepath.to_string());
+        .unwrap_or_else(|| default_replit_nix_filepath);
 
     let human_readable = args.human;
     let verbose = args.verbose;
