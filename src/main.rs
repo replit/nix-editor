@@ -17,7 +17,7 @@ use crate::adder::add_dep;
 use crate::remover::remove_dep;
 use crate::verify_getter::verify_get;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
     // dep to add
@@ -71,6 +71,10 @@ pub enum DepType {
     Python,
 }
 
+impl Default for DepType {
+    fn default() -> Self { DepType::Regular }
+}
+
 #[derive(Serialize, Deserialize)]
 struct Op {
     op: OpKind,
@@ -85,6 +89,12 @@ struct Res {
 }
 
 fn main() {
+    // handle command line args
+    let args = Args::parse();
+    real_main(args)
+}
+
+fn real_main(args:Args) {
     let replit_nix_file = "./replit.nix";
     let default_replit_nix_filepath : String = match env::var("REPL_HOME") {
         Ok(repl_home) => Path::new(repl_home.as_str()).
@@ -92,8 +102,6 @@ fn main() {
         Err(_) => replit_nix_file.to_string(),
     };
 
-    // handle command line args
-    let args = Args::parse();
 
     let replit_nix_filepath = args
         .path
@@ -284,4 +292,31 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
         .children()
         .map(|child| child.text().to_string())
         .collect())
+}
+
+
+#[test]
+fn test_integration_makes_template_if_missing() {
+    let dir = env::temp_dir();
+    fs::create_dir_all(dir.clone()).unwrap();
+    let repl_nix_file = dir.join("replit.nix");
+    env::set_var("REPL_HOME", dir.display().to_string());
+
+    let args = Args {
+        add: Some("pkgs.ncdu".to_string()),
+        ..Default::default()
+    };
+    real_main(args);
+
+    let contents = fs::read_to_string(repl_nix_file).unwrap();
+
+    assert_eq!(r#"
+{pkgs}:
+{
+  deps = [
+    pkgs.ncdu
+  ];
+}
+"#,
+    contents);
 }
