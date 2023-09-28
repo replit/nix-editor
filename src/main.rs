@@ -197,9 +197,9 @@ fn perform_op(
 "#.to_string(),
     };
 
-    let ast = rnix::parse(&contents);
+    let ast = rnix::Root::parse(&contents);
 
-    let deps_list = match verify_get(ast.node(), dep_type) {
+    let deps_list = match verify_get(ast.syntax(), dep_type) {
         Ok(deps_list) => deps_list,
         Err(_) => {
             return (

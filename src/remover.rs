@@ -54,7 +54,6 @@ mod remove_tests {
     use super::*;
     use crate::verify_getter::verify_get;
     use crate::DepType;
-    use rnix::parse;
 
     fn python_replit_nix() -> String {
         r#"
@@ -80,7 +79,7 @@ mod remove_tests {
     #[test]
     fn test_regular_remove_dep() {
         let mut contents = python_replit_nix();
-        let tree = parse(&contents).node();
+        let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(tree, DepType::Regular);
         assert!(deps_list_res.is_ok());
 
@@ -116,7 +115,7 @@ mod remove_tests {
     #[test]
     fn test_python_remove_dep() {
         let mut contents = python_replit_nix();
-        let tree = parse(&contents).node();
+        let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(tree, DepType::Python);
         assert!(deps_list_res.is_ok());
 
