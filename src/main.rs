@@ -199,7 +199,7 @@ fn perform_op(
 
     let ast = rnix::Root::parse(&contents);
 
-    let deps_list = match verify_get(ast.syntax(), dep_type) {
+    let deps_list = match verify_get(&ast.syntax(), dep_type) {
         Ok(deps_list) => deps_list,
         Err(_) => {
             return (
@@ -210,10 +210,10 @@ fn perform_op(
     };
 
     let op_res = match op {
-        OpKind::Add => add_dep(&mut contents, deps_list, dep),
-        OpKind::Remove => remove_dep(&mut contents, deps_list, dep),
+        OpKind::Add => add_dep(deps_list, dep).map(|node| node.to_string()),
+        OpKind::Remove => remove_dep(&mut contents, deps_list.node, dep),
         OpKind::Get => {
-            let deps = match get_deps(deps_list) {
+            let deps = match get_deps(deps_list.node) {
                 Ok(deps) => deps,
                 Err(_) => {
                     return ("error".to_string(), Some("Could not get deps".to_string()));

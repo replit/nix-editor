@@ -1,58 +1,52 @@
 use anyhow::{Context, Result};
-use rnix::SyntaxNode;
+use rnix::{SyntaxNode};
+
+use crate::verify_getter::SyntaxNodeAndWhitespace;
 
 pub fn add_dep(
-    contents: &mut String,
-    deps_list: SyntaxNode,
+    deps_list: SyntaxNodeAndWhitespace,
     new_dep_opt: Option<String>,
-) -> Result<String> {
+) -> Result<SyntaxNode> {
+
     let new_dep = new_dep_opt.context("error: no dependency")?;
+    let whitespace = deps_list.whitespace;
+    let deps_list = deps_list.node;
 
     for dep in deps_list.children() {
         if dep.to_string() == new_dep {
             // dep is already present in the deps_list, we're done
-            return Ok(contents.to_string());
+            return Ok(deps_list);
         }
     }
 
-    let dep_list_first_token = deps_list
-        .first_token()
-        .context("error: could not find first bracket token in deps list")?;
-    let open_bracket_pos: usize = dep_list_first_token.text_range().start().into();
+    let mut base_indent = 0;
+    if let Some(w) = whitespace {
+        base_indent = w.text().replace("\n", "").len();
+    }
+    let entry_indent = base_indent + 2;
+    let base_whitespace = " ".repeat(base_indent);
+    let newline_whitespace = &format!("\n{base_whitespace}");
 
-    // add dep pos is the character position of the first character of the new dependency
-    let add_dep_pos = calc_add_dep_pos(deps_list);
+    let has_newline = deps_list
+        .to_string()
+        .contains('\n');
 
-    // we need to add leading whitespace to the next line so that
-    // the pkgs are correctly formatted (i.e. they are lined up)
-    let white_space_count = if add_dep_pos >= 2 + open_bracket_pos {
-        add_dep_pos - open_bracket_pos - 2
-    } else {
-        2
+    let newline =  match has_newline {
+        true => "",
+        false => newline_whitespace,
     };
-    let leading_white_space = " ".repeat(white_space_count);
 
-    let new_contents = contents.split_off(add_dep_pos);
-    if add_dep_pos == open_bracket_pos + 1 {
-        contents.push('\n');
-        contents.push_str(&" ".repeat(4));
-    }
-    contents.push_str(&new_dep);
-    contents.push('\n');
-    contents.push_str(&leading_white_space);
-    contents.push_str(&new_contents);
-    Ok(contents.to_string())
-}
+    deps_list.splice_children(
+        1..1,
+        vec![
+            rnix::NodeOrToken::Node(
+                rnix::Root::parse(
+                    &format!("\n{}{}{newline}", &" ".repeat(entry_indent), new_dep))
+                    .syntax().clone_for_update()),
+        ]
+    );
 
-fn calc_add_dep_pos(deps_list: SyntaxNode) -> usize {
-    // get the first child of the deps_list
-    // we want to add the new dep right before the first one
-    if let Some(first_dep) = deps_list.first_child() {
-        first_dep.text_range().start().into()
-    } else {
-        let deps_list_start: usize = deps_list.text_range().start().into();
-        deps_list_start + 1
-    }
+    Ok(deps_list)
 }
 
 #[cfg(test)]
@@ -61,52 +55,76 @@ mod add_tests {
     use crate::verify_getter::verify_get;
     use crate::DepType;
 
-    fn test_add(new_dep: &str, initial_contents: &str, expected_contents: &str) {
-        let tree = rnix::Root::parse(&initial_contents).syntax();
-        let deps_list_res = verify_get(tree, DepType::Regular);
+    fn test_add(dep_type: DepType, new_dep: &str, initial_contents: &str, expected_contents: &str) {
+        let tree = rnix::Root::parse(&initial_contents).syntax().clone_for_update();
+
+        let deps_list_res = verify_get(&tree, dep_type);
         assert!(deps_list_res.is_ok());
 
         let deps_list = deps_list_res.unwrap();
 
-        let new_contents = add_dep(&mut initial_contents.to_string(), deps_list, Some(new_dep.to_string()));
-        assert!(new_contents.is_ok());
+        let new_deps_list = add_dep(deps_list, Some(new_dep.to_string()));
+        assert!(new_deps_list.is_ok());
 
-        let new_contents = new_contents.unwrap();
-
-        assert_eq!(new_contents, expected_contents.to_string());
+        assert_eq!(tree.to_string(), expected_contents.to_string());
     }
 
     #[test]
     fn test_empty_regular_add_dep() {
         test_add(
+            DepType::Regular,
             "pkgs.test",
-        r#"
-{ pkgs }: {
-  deps = [];
+        r#"{ pkgs }: {
+    deps = [];
 }
         "#,
-        r#"
-{ pkgs }: {
+        r#"{ pkgs }: {
+    deps = [
+      pkgs.test
+    ];
+}
+        "#)
+    }
+
+    #[test]
+    fn test_weird_empty_regular_add_dep() {
+        test_add(
+            DepType::Regular,
+            "pkgs.test",
+            r#"{ pkgs }: { deps = []; }"#,
+        r#"{ pkgs }: { deps = [
+  pkgs.test
+]; }"#)
+    }
+
+    #[test]
+    fn test_empty_but_expanded_regular_add_dep() {
+        test_add(
+            DepType::Regular,
+            "pkgs.test",
+            r#"{ pkgs }: {
+  deps = [
+  ];
+}"#,
+            r#"{ pkgs }: {
   deps = [
     pkgs.test
   ];
-}
-        "#)
+}"#)
     }
 
     #[test]
     fn test_duplicate_add() {
         test_add(
+            DepType::Regular,
             "pkgs.test",
-        r#"
-{ pkgs }: {
+        r#"{ pkgs }: {
   deps = [
     pkgs.test
   ];
 }
         "#,
-        r#"
-{ pkgs }: {
+        r#"{ pkgs }: {
   deps = [
     pkgs.test
   ];
@@ -114,9 +132,8 @@ mod add_tests {
         "#)
     }
 
-    fn python_replit_nix() -> String {
-        r#"
-{ pkgs }: {
+    fn python_replit_nix() -> &'static str {
+        r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
   ];
@@ -132,27 +149,15 @@ mod add_tests {
   };
 }
         "#
-        .to_string()
     }
 
     #[test]
     fn test_regular_add_dep() {
-        let mut contents = python_replit_nix();
-        let tree = rnix::Root::parse(&contents).syntax();
-        let deps_list_res = verify_get(tree, DepType::Regular);
-        assert!(deps_list_res.is_ok());
-
-        let deps_list = deps_list_res.unwrap();
-
-        let new_dep = "pkgs.test";
-
-        let new_contents = add_dep(&mut contents, deps_list, Some(new_dep.to_string()));
-        assert!(new_contents.is_ok());
-
-        let new_contents = new_contents.unwrap();
-
-        let expected_contents = r#"
-{ pkgs }: {
+        test_add(
+            DepType::Regular,
+            "pkgs.test",
+            python_replit_nix(),
+            r#"{ pkgs }: {
   deps = [
     pkgs.test
     pkgs.python38Full
@@ -168,29 +173,16 @@ mod add_tests {
     LANG = "en_US.UTF-8";
   };
 }
-        "#
-        .to_string();
-        assert_eq!(new_contents, expected_contents);
+        "#);
     }
 
     #[test]
     fn test_python_add_dep() {
-        let mut contents = python_replit_nix();
-        let tree = rnix::Root::parse(&contents).syntax();
-        let deps_list_res = verify_get(tree, DepType::Python);
-        assert!(deps_list_res.is_ok());
-
-        let deps_list = deps_list_res.unwrap();
-
-        let new_dep = "pkgs.test";
-
-        let new_contents = add_dep(&mut contents, deps_list, Some(new_dep.to_string()));
-        assert!(new_contents.is_ok());
-
-        let new_contents = new_contents.unwrap();
-
-        let expected_contents = r#"
-{ pkgs }: {
+        test_add(
+            DepType::Python,
+            "pkgs.test",
+            python_replit_nix(),
+            r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
   ];
@@ -206,9 +198,7 @@ mod add_tests {
     LANG = "en_US.UTF-8";
   };
 }
-        "#
-        .to_string();
-        assert_eq!(new_contents, expected_contents);
+        "#);
     }
 
 }

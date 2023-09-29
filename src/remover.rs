@@ -80,14 +80,14 @@ mod remove_tests {
     fn test_regular_remove_dep() {
         let mut contents = python_replit_nix();
         let tree = rnix::Root::parse(&contents).syntax();
-        let deps_list_res = verify_get(tree, DepType::Regular);
+        let deps_list_res = verify_get(&tree, DepType::Regular);
         assert!(deps_list_res.is_ok());
 
         let deps_list = deps_list_res.unwrap();
 
         let dep_to_remove = "pkgs.python38Full";
 
-        let new_contents = remove_dep(&mut contents, deps_list, Some(dep_to_remove.to_string()));
+        let new_contents = remove_dep(&mut contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -116,14 +116,14 @@ mod remove_tests {
     fn test_python_remove_dep() {
         let mut contents = python_replit_nix();
         let tree = rnix::Root::parse(&contents).syntax();
-        let deps_list_res = verify_get(tree, DepType::Python);
+        let deps_list_res = verify_get(&tree, DepType::Python);
         assert!(deps_list_res.is_ok());
 
         let deps_list = deps_list_res.unwrap();
 
         let dep_to_remove = "pkgs.glib";
 
-        let new_contents = remove_dep(&mut contents, deps_list, Some(dep_to_remove.to_string()));
+        let new_contents = remove_dep(&mut contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
