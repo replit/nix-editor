@@ -132,7 +132,7 @@ mod add_tests {
         "#)
     }
 
-    fn python_replit_nix() -> &'static str {
+    const PYTHON_REPLIT_NIX : &str =
         r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
@@ -147,16 +147,15 @@ mod add_tests {
     PYTHONBIN = "${pkgs.python38Full}/bin/python3.8";
     LANG = "en_US.UTF-8";
   };
-}
-        "#
-    }
+}"#;
+
 
     #[test]
     fn test_regular_add_dep() {
         test_add(
             DepType::Regular,
             "pkgs.test",
-            python_replit_nix(),
+            PYTHON_REPLIT_NIX,
             r#"{ pkgs }: {
   deps = [
     pkgs.test
@@ -172,8 +171,7 @@ mod add_tests {
     PYTHONBIN = "${pkgs.python38Full}/bin/python3.8";
     LANG = "en_US.UTF-8";
   };
-}
-        "#);
+}"#);
     }
 
     #[test]
@@ -181,7 +179,7 @@ mod add_tests {
         test_add(
             DepType::Python,
             "pkgs.test",
-            python_replit_nix(),
+            PYTHON_REPLIT_NIX,
             r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
@@ -197,8 +195,7 @@ mod add_tests {
     PYTHONBIN = "${pkgs.python38Full}/bin/python3.8";
     LANG = "en_US.UTF-8";
   };
-}
-        "#);
+}"#);
     }
 
 }
