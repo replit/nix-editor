@@ -24,16 +24,17 @@ pub fn add_dep(
         base_indent = w.text().replace("\n", "").len();
     }
     let entry_indent = base_indent + 2;
-    let base_whitespace = " ".repeat(base_indent);
-    let newline_whitespace = &format!("\n{base_whitespace}");
 
     let has_newline = deps_list
         .to_string()
         .contains('\n');
 
     let newline =  match has_newline {
-        true => "",
-        false => newline_whitespace,
+        true => String::new(),
+        false =>
+            std::iter::once("\n")
+            .chain(std::iter::repeat(" ")
+                   .take(base_indent)).collect(),
     };
 
     deps_list.splice_children(
