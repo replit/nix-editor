@@ -1,13 +1,14 @@
-{ rustPlatform, rev }:
-
+{
+  rustPlatform,
+  rev,
+}:
 rustPlatform.buildRustPackage {
-    pname = "nix-editor";
-    version = rev;
+  pname = "nix-editor";
+  version = rev;
 
-    cargoLock = {
-      lockFile = ./Cargo.lock;
-    };
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
 
-    src = ./.;
+  src = ./.;
 }
-

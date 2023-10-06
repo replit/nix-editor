@@ -19,7 +19,7 @@ macro_rules! verify_eq {
 #[derive(Debug)]
 pub struct SyntaxNodeAndWhitespace {
     pub whitespace: Option<SyntaxToken>,
-    pub node: SyntaxNode
+    pub node: SyntaxNode,
 }
 
 // Will try to parse through the AST and return a list of deps
@@ -51,10 +51,7 @@ pub fn verify_get(root: &SyntaxNode, dep_type: DepType) -> Result<SyntaxNodeAndW
 }
 
 fn verify_get_regular(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> {
-    let deps = find_or_insert_key_value_with_key(
-        &attr_set,
-        "deps",
-        template_deps())
+    let deps = find_or_insert_key_value_with_key(&attr_set, "deps", template_deps())
         .context("expected to have a deps key")?;
     let whitespace = deps.whitespace;
     let deps = deps.node;
@@ -63,20 +60,30 @@ fn verify_get_regular(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> 
     let deps_list = get_nth_child(&deps, 1).context("expected to have two children")?;
     verify_eq!(deps_list.kind(), SyntaxKind::NODE_LIST);
 
-    Ok(SyntaxNodeAndWhitespace { whitespace, node: deps_list})
+    Ok(SyntaxNodeAndWhitespace {
+        whitespace,
+        node: deps_list,
+    })
 }
 
-fn find_or_insert_key_value_with_key(node: &SyntaxNode, key: &str, if_missing_template: SyntaxNode) -> Option<SyntaxNodeAndWhitespace> {
+fn find_or_insert_key_value_with_key(
+    node: &SyntaxNode,
+    key: &str,
+    if_missing_template: SyntaxNode,
+) -> Option<SyntaxNodeAndWhitespace> {
     let found = find_key_value_with_key(&node, key);
     if found.is_some() {
         return found;
     }
     let count = node.children().count() + 2;
 
-    node.splice_children(count..count, vec![
-        rnix::NodeOrToken::Node(rnix::Root::parse("\n  ").syntax().clone_for_update()),
-        rnix::NodeOrToken::Node(if_missing_template),
-    ]);
+    node.splice_children(
+        count..count,
+        vec![
+            rnix::NodeOrToken::Node(rnix::Root::parse("\n  ").syntax().clone_for_update()),
+            rnix::NodeOrToken::Node(if_missing_template),
+        ],
+    );
 
     let result = find_key_value_with_key(&node, key);
     result
@@ -91,7 +98,12 @@ fn template_deps() -> SyntaxNode {
     if errors.len() > 0 {
         panic!("add_syntax_node had error: {:#?}", errors)
     }
-    ast.syntax().first_child().unwrap().first_child().unwrap().clone_for_update()
+    ast.syntax()
+        .first_child()
+        .unwrap()
+        .first_child()
+        .unwrap()
+        .clone_for_update()
 }
 
 fn template_env() -> SyntaxNode {
@@ -105,7 +117,12 @@ fn template_env() -> SyntaxNode {
     if errors.len() > 0 {
         panic!("add_syntax_node had error: {:#?}", errors)
     }
-    ast.syntax().first_child().unwrap().first_child().unwrap().clone_for_update()
+    ast.syntax()
+        .first_child()
+        .unwrap()
+        .first_child()
+        .unwrap()
+        .clone_for_update()
 }
 
 fn template_python() -> SyntaxNode {
@@ -117,15 +134,18 @@ fn template_python() -> SyntaxNode {
     if errors.len() > 0 {
         panic!("add_syntax_node had error: {:#?}", errors)
     }
-    ast.syntax().first_child().unwrap().first_child().unwrap().clone_for_update()
+    ast.syntax()
+        .first_child()
+        .unwrap()
+        .first_child()
+        .unwrap()
+        .clone_for_update()
 }
 
 fn verify_get_python(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> {
-    let env = find_or_insert_key_value_with_key(
-        &attr_set,
-        "env",
-        template_env())
-        .context("expected to have env key")?.node;
+    let env = find_or_insert_key_value_with_key(&attr_set, "env", template_env())
+        .context("expected to have env key")?
+        .node;
     verify_eq!(env.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
 
     let env_attr_set = get_nth_child(&env, 1).context("expected to have two children")?;
@@ -134,8 +154,9 @@ fn verify_get_python(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> {
     let py_lib_path = find_or_insert_key_value_with_key(
         &env_attr_set,
         "PYTHON_LD_LIBRARY_PATH",
-        template_python())
-        .context("expected to have PYTHON_LD_LIBRARY_PATH key")?;
+        template_python(),
+    )
+    .context("expected to have PYTHON_LD_LIBRARY_PATH key")?;
     let whitespace = py_lib_path.whitespace;
     let py_lib_path = py_lib_path.node;
     verify_eq!(py_lib_path.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
@@ -151,7 +172,10 @@ fn verify_get_python(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> {
         get_nth_child(&py_lib_apply, 1).context("expected to have two children")?;
     verify_eq!(py_lib_node_list.kind(), SyntaxKind::NODE_LIST);
 
-    Ok(SyntaxNodeAndWhitespace { whitespace, node: py_lib_node_list})
+    Ok(SyntaxNodeAndWhitespace {
+        whitespace,
+        node: py_lib_node_list,
+    })
 }
 
 fn get_nth_child(node: &SyntaxNode, index: usize) -> Option<SyntaxNode> {
@@ -202,11 +226,10 @@ fn find_key_value_with_key(node: &SyntaxNode, key: &str) -> Option<SyntaxNodeAnd
     });
 
     match node {
-        Some(node_or_token) =>
-             Some(SyntaxNodeAndWhitespace {
-                 whitespace: last_whitespace,
-                 node: node_or_token.as_node().unwrap().clone(),
-             }),
+        Some(node_or_token) => Some(SyntaxNodeAndWhitespace {
+            whitespace: last_whitespace,
+            node: node_or_token.as_node().unwrap().clone(),
+        }),
         _ => None,
     }
 }
@@ -252,9 +275,12 @@ mod verify_get_tests {
 
     #[test]
     fn verify_get_when_missing_env() {
-        let deps_list = gets_ok(r#"{ pkgs }: {
+        let deps_list = gets_ok(
+            r#"{ pkgs }: {
   deps = [];
-}"#, DepType::Python);
+}"#,
+            DepType::Python,
+        );
         let deps_list = deps_list.node;
         let deps_list_children: Vec<SyntaxNode> = deps_list.children().collect();
         assert_eq!(deps_list_children.len(), 0);
@@ -262,10 +288,13 @@ mod verify_get_tests {
 
     #[test]
     fn verify_get_when_missing_python() {
-        let deps_list = gets_ok(r#"{ pkgs }: {
+        let deps_list = gets_ok(
+            r#"{ pkgs }: {
   deps = [];
   env = {};
-}"#, DepType::Python);
+}"#,
+            DepType::Python,
+        );
         let deps_list = deps_list.node;
         let deps_list_children: Vec<SyntaxNode> = deps_list.children().collect();
         assert_eq!(deps_list_children.len(), 0);
