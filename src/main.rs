@@ -6,7 +6,7 @@ use anyhow::Result;
 use rnix::SyntaxNode;
 
 use std::fs;
-use std::{io, io::prelude::*, path::Path, env};
+use std::{env, io, io::prelude::*, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
@@ -72,7 +72,9 @@ pub enum DepType {
 }
 
 impl Default for DepType {
-    fn default() -> Self { DepType::Regular }
+    fn default() -> Self {
+        DepType::Regular
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,18 +96,18 @@ fn main() {
     real_main(args)
 }
 
-fn real_main(args:Args) {
+fn real_main(args: Args) {
     let replit_nix_file = "./replit.nix";
-    let default_replit_nix_filepath : String = match env::var("REPL_HOME") {
-        Ok(repl_home) => Path::new(repl_home.as_str()).
-            join(replit_nix_file).to_str().unwrap().to_string(),
+    let default_replit_nix_filepath: String = match env::var("REPL_HOME") {
+        Ok(repl_home) => Path::new(repl_home.as_str())
+            .join(replit_nix_file)
+            .to_str()
+            .unwrap()
+            .to_string(),
         Err(_) => replit_nix_file.to_string(),
     };
 
-
-    let replit_nix_filepath = args
-        .path
-        .unwrap_or_else(|| default_replit_nix_filepath);
+    let replit_nix_filepath = args.path.unwrap_or_else(|| default_replit_nix_filepath);
 
     let human_readable = args.human;
     let verbose = args.verbose;
@@ -182,7 +184,7 @@ fn real_main(args:Args) {
     }
 }
 
-const EMPTY_TEMPLATE : &str = r#"{pkgs}: {
+const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
   deps = [];
 }
 "#;
@@ -250,7 +252,10 @@ fn perform_op(
         Ok(_) => ("success".to_string(), None),
         Err(err) => (
             "error".to_string(),
-            Some(format!("Could not write to file {}: {}", replit_nix_filepath, err)),
+            Some(format!(
+                "Could not write to file {}: {}",
+                replit_nix_filepath, err
+            )),
         ),
     }
 }
@@ -294,7 +299,6 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
         .collect())
 }
 
-
 #[cfg(test)]
 mod integration_tests {
     use super::*;
@@ -313,12 +317,15 @@ mod integration_tests {
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
-        assert_eq!(r#"{pkgs}: {
+        assert_eq!(
+            r#"{pkgs}: {
   deps = [
     pkgs.ncdu
   ];
 }
-"#, contents);
+"#,
+            contents
+        );
 
         drop(repl_nix_file);
         dir.close().unwrap();
@@ -341,7 +348,8 @@ mod integration_tests {
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
-        assert_eq!(r#"{pkgs}: {
+        assert_eq!(
+            r#"{pkgs}: {
   deps = [];
   env = {
     PYTHON_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
@@ -350,7 +358,8 @@ mod integration_tests {
   };
 }
 "#,
-                   contents);
+            contents
+        );
         drop(repl_nix_file);
         dir.close().unwrap();
     }

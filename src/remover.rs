@@ -87,7 +87,11 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.python38Full";
 
-        let new_contents = remove_dep(&mut contents, deps_list.node, Some(dep_to_remove.to_string()));
+        let new_contents = remove_dep(
+            &mut contents,
+            deps_list.node,
+            Some(dep_to_remove.to_string()),
+        );
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -123,7 +127,11 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.glib";
 
-        let new_contents = remove_dep(&mut contents, deps_list.node, Some(dep_to_remove.to_string()));
+        let new_contents = remove_dep(
+            &mut contents,
+            deps_list.node,
+            Some(dep_to_remove.to_string()),
+        );
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();

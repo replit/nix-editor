@@ -3,7 +3,10 @@
 
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
-  outputs = { self, nixpkgs }: let
+  outputs = {
+    self,
+    nixpkgs,
+  }: let
     systems = [
       "aarch64-darwin"
       "aarch64-linux"
@@ -23,6 +26,12 @@
       nix-editor = pkgs.callPackage ./nix-editor.nix {
         inherit rev;
       };
+      devShell = pkgs.callPackage ./nix/devshell {};
+      fmt = pkgs.callPackage ./nix/fmt {};
     });
+    devShells = eachSystem (system: {
+      default = self.packages.${system}.devShell;
+    });
+    formatter = eachSystem (system: self.packages.${system}.fmt);
   };
 }

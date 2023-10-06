@@ -28,3 +28,8 @@ You can also run it without passing in any flags. If you do that, it reads json 
 ```
 {"op":"add", "dep": "pkgs.cowsay" }
 ```
+
+# Contributing
+
+* Please run `nix fmt` to format the code in this repository before making a pull request.
+* `nix develop` will put you in a devshell with all the necessary development tools.

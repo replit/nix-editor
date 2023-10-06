@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rnix::{SyntaxNode};
+use rnix::SyntaxNode;
 
 use crate::verify_getter::SyntaxNodeAndWhitespace;
 
@@ -7,7 +7,6 @@ pub fn add_dep(
     deps_list: SyntaxNodeAndWhitespace,
     new_dep_opt: Option<String>,
 ) -> Result<SyntaxNode> {
-
     let new_dep = new_dep_opt.context("error: no dependency")?;
     let whitespace = deps_list.whitespace;
     let deps_list = deps_list.node;
@@ -25,26 +24,26 @@ pub fn add_dep(
     }
     let entry_indent = base_indent + 2;
 
-    let has_newline = deps_list
-        .to_string()
-        .contains('\n');
+    let has_newline = deps_list.to_string().contains('\n');
 
-    let newline =  match has_newline {
+    let newline = match has_newline {
         true => String::new(),
-        false =>
-            std::iter::once("\n")
-            .chain(std::iter::repeat(" ")
-                   .take(base_indent)).collect(),
+        false => std::iter::once("\n")
+            .chain(std::iter::repeat(" ").take(base_indent))
+            .collect(),
     };
 
     deps_list.splice_children(
         1..1,
-        vec![
-            rnix::NodeOrToken::Node(
-                rnix::Root::parse(
-                    &format!("\n{}{}{newline}", &" ".repeat(entry_indent), new_dep))
-                    .syntax().clone_for_update()),
-        ]
+        vec![rnix::NodeOrToken::Node(
+            rnix::Root::parse(&format!(
+                "\n{}{}{newline}",
+                &" ".repeat(entry_indent),
+                new_dep
+            ))
+            .syntax()
+            .clone_for_update(),
+        )],
     );
 
     Ok(deps_list)
@@ -57,7 +56,9 @@ mod add_tests {
     use crate::DepType;
 
     fn test_add(dep_type: DepType, new_dep: &str, initial_contents: &str, expected_contents: &str) {
-        let tree = rnix::Root::parse(&initial_contents).syntax().clone_for_update();
+        let tree = rnix::Root::parse(&initial_contents)
+            .syntax()
+            .clone_for_update();
 
         let deps_list_res = verify_get(&tree, dep_type);
         assert!(deps_list_res.is_ok());
@@ -75,16 +76,17 @@ mod add_tests {
         test_add(
             DepType::Regular,
             "pkgs.test",
-        r#"{ pkgs }: {
+            r#"{ pkgs }: {
     deps = [];
 }
         "#,
-        r#"{ pkgs }: {
+            r#"{ pkgs }: {
     deps = [
       pkgs.test
     ];
 }
-        "#)
+        "#,
+        )
     }
 
     #[test]
@@ -93,9 +95,10 @@ mod add_tests {
             DepType::Regular,
             "pkgs.test",
             r#"{ pkgs }: { deps = []; }"#,
-        r#"{ pkgs }: { deps = [
+            r#"{ pkgs }: { deps = [
   pkgs.test
-]; }"#)
+]; }"#,
+        )
     }
 
     #[test]
@@ -111,7 +114,8 @@ mod add_tests {
   deps = [
     pkgs.test
   ];
-}"#)
+}"#,
+        )
     }
 
     #[test]
@@ -119,22 +123,22 @@ mod add_tests {
         test_add(
             DepType::Regular,
             "pkgs.test",
-        r#"{ pkgs }: {
+            r#"{ pkgs }: {
   deps = [
     pkgs.test
   ];
 }
         "#,
-        r#"{ pkgs }: {
+            r#"{ pkgs }: {
   deps = [
     pkgs.test
   ];
 }
-        "#)
+        "#,
+        )
     }
 
-    const PYTHON_REPLIT_NIX : &str =
-        r#"{ pkgs }: {
+    const PYTHON_REPLIT_NIX: &str = r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
   ];
@@ -149,7 +153,6 @@ mod add_tests {
     LANG = "en_US.UTF-8";
   };
 }"#;
-
 
     #[test]
     fn test_regular_add_dep() {
@@ -172,7 +175,8 @@ mod add_tests {
     PYTHONBIN = "${pkgs.python38Full}/bin/python3.8";
     LANG = "en_US.UTF-8";
   };
-}"#);
+}"#,
+        );
     }
 
     #[test]
@@ -196,7 +200,7 @@ mod add_tests {
     PYTHONBIN = "${pkgs.python38Full}/bin/python3.8";
     LANG = "en_US.UTF-8";
   };
-}"#);
+}"#,
+        );
     }
-
 }
