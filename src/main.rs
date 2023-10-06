@@ -182,6 +182,11 @@ fn real_main(args:Args) {
     }
 }
 
+const EMPTY_TEMPLATE : &str = r#"{pkgs}: {
+  deps = [];
+}
+"#;
+
 fn perform_op(
     op: OpKind,
     dep: Option<String>,
@@ -197,17 +202,12 @@ fn perform_op(
     // read replit.nix file
     let mut contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
-        Err(_) => r#"
-{pkgs}:
-{
-  deps = [];
-}
-"#.to_string(),
+        Err(_) => EMPTY_TEMPLATE.to_string(),
     };
 
-    let ast = rnix::Root::parse(&contents);
+    let root = rnix::Root::parse(&contents).syntax().clone_for_update();
 
-    let deps_list = match verify_get(&ast.syntax(), dep_type) {
+    let deps_list = match verify_get(&root, dep_type) {
         Ok(deps_list) => deps_list,
         Err(_) => {
             return (
@@ -218,7 +218,7 @@ fn perform_op(
     };
 
     let op_res = match op {
-        OpKind::Add => add_dep(deps_list, dep).map(|node| node.to_string()),
+        OpKind::Add => add_dep(deps_list, dep).map(|_| root.to_string()),
         OpKind::Remove => remove_dep(&mut contents, deps_list.node, dep),
         OpKind::Get => {
             let deps = match get_deps(deps_list.node) {
@@ -248,9 +248,9 @@ fn perform_op(
     // write new replit.nix file
     match fs::write(&replit_nix_filepath, new_contents) {
         Ok(_) => ("success".to_string(), None),
-        Err(_) => (
+        Err(err) => (
             "error".to_string(),
-            Some(format!("Could not write to file {}", replit_nix_filepath)),
+            Some(format!("Could not write to file {}: {}", replit_nix_filepath, err)),
         ),
     }
 }
@@ -295,28 +295,63 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
 }
 
 
-#[test]
-fn test_integration_makes_template_if_missing() {
-    let dir = env::temp_dir();
-    fs::create_dir_all(dir.clone()).unwrap();
-    let repl_nix_file = dir.join("replit.nix");
-    env::set_var("REPL_HOME", dir.display().to_string());
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
 
-    let args = Args {
-        add: Some("pkgs.ncdu".to_string()),
-        ..Default::default()
-    };
-    real_main(args);
+    #[test]
+    fn test_integration_makes_template_if_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let repl_nix_file = dir.path().join("replit.nix");
+        env::set_var("REPL_HOME", dir.path().display().to_string());
 
-    let contents = fs::read_to_string(repl_nix_file).unwrap();
+        let args = Args {
+            add: Some("pkgs.ncdu".to_string()),
+            ..Default::default()
+        };
+        real_main(args);
 
-    assert_eq!(r#"
-{pkgs}:
-{
+        let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
+
+        assert_eq!(r#"{pkgs}: {
   deps = [
     pkgs.ncdu
   ];
 }
+"#, contents);
+
+        drop(repl_nix_file);
+        dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_integration_makes_python_ld_library_if_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let repl_nix_file = dir.path().join("replit.nix");
+
+        fs::write(repl_nix_file.as_os_str(), EMPTY_TEMPLATE.as_bytes()).unwrap();
+
+        let args = Args {
+            path: Some(repl_nix_file.clone().display().to_string()),
+            dep_type: DepType::Python,
+            add: Some("pkgs.zlib".to_string()),
+            ..Default::default()
+        };
+        real_main(args);
+
+        let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
+
+        assert_eq!(r#"{pkgs}: {
+  deps = [];
+  env = {
+    PYTHON_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+      pkgs.zlib
+    ];
+  };
+}
 "#,
-    contents);
+                   contents);
+        drop(repl_nix_file);
+        dir.close().unwrap();
+    }
 }
