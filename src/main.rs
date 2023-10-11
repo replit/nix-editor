@@ -17,7 +17,7 @@ use crate::adder::add_dep;
 use crate::remover::remove_dep;
 use crate::verify_getter::verify_get;
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
     // dep to add
@@ -247,6 +247,10 @@ fn perform_op(
         return ("success".to_string(), Some(new_contents));
     }
 
+    if new_contents == contents {
+        return ("success".to_string(), None);
+    }
+
     // write new replit.nix file
     match fs::write(&replit_nix_filepath, new_contents) {
         Ok(_) => ("success".to_string(), None),
@@ -362,5 +366,30 @@ mod integration_tests {
         );
         drop(repl_nix_file);
         dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_integration_no_change_no_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let repl_nix_file = dir.path().join("replit.nix");
+
+        fs::write(repl_nix_file.as_os_str(), EMPTY_TEMPLATE.as_bytes()).unwrap();
+        let args = Args {
+            path: Some(repl_nix_file.clone().display().to_string()),
+            dep_type: DepType::Python,
+            add: Some("pkgs.zlib".to_string()),
+            ..Default::default()
+        };
+        real_main(args.clone());
+
+        let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
+        let modification_time = metadata.modified().unwrap();
+
+        real_main(args);
+
+        let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
+        let modification_time2 = metadata.modified().unwrap();
+
+        assert_eq!(modification_time, modification_time2);
     }
 }
