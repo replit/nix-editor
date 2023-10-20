@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use rnix::*;
 
-use crate::DepType;
+use crate::{DepType, EMPTY_TEMPLATE};
 
 // kind of like assert! but returns an error instead of panicking
 macro_rules! verify_eq {
@@ -28,6 +28,10 @@ pub struct SyntaxNodeAndWhitespace {
 // assumptions about the AST, or else it'll be impossible to do anything.
 pub fn verify_get(root: &SyntaxNode, dep_type: DepType) -> Result<SyntaxNodeAndWhitespace> {
     verify_eq!(root.kind(), SyntaxKind::NODE_ROOT);
+
+    if root.children().count() == 0 {
+        root.splice_children(0..0, vec![rnix::NodeOrToken::Node(template_empty())]);
+    }
 
     let lambda = get_nth_child(&root, 0).context("expected to have a child")?;
     verify_eq!(lambda.kind(), SyntaxKind::NODE_LAMBDA);
@@ -89,6 +93,15 @@ fn find_or_insert_key_value_with_key(
     result
 }
 
+fn template_empty() -> SyntaxNode {
+    let ast = rnix::Root::parse(EMPTY_TEMPLATE);
+    let errors = ast.errors();
+    if errors.len() > 0 {
+        panic!("template_empty had an error: {:#?}", errors)
+    }
+    ast.syntax().first_child().unwrap().clone_for_update()
+}
+
 fn template_deps() -> SyntaxNode {
     let python_env_template = r#"{
   deps = [];
@@ -96,7 +109,7 @@ fn template_deps() -> SyntaxNode {
     let ast = rnix::Root::parse(python_env_template);
     let errors = ast.errors();
     if errors.len() > 0 {
-        panic!("add_syntax_node had error: {:#?}", errors)
+        panic!("template_deps had an error: {:#?}", errors)
     }
     ast.syntax()
         .first_child()
@@ -115,7 +128,7 @@ fn template_env() -> SyntaxNode {
     let ast = rnix::Root::parse(python_env_template);
     let errors = ast.errors();
     if errors.len() > 0 {
-        panic!("add_syntax_node had error: {:#?}", errors)
+        panic!("template_env had an error: {:#?}", errors)
     }
     ast.syntax()
         .first_child()
@@ -132,7 +145,7 @@ fn template_python() -> SyntaxNode {
     let ast = rnix::Root::parse(python_env_template);
     let errors = ast.errors();
     if errors.len() > 0 {
-        panic!("add_syntax_node had error: {:#?}", errors)
+        panic!("template_python had an error: {:#?}", errors)
     }
     ast.syntax()
         .first_child()
@@ -263,6 +276,14 @@ mod verify_get_tests {
         let deps_list_res = verify_get(&ast, dep_type);
         assert!(deps_list_res.is_ok());
         deps_list_res.unwrap()
+    }
+
+    #[test]
+    fn verify_get_when_missing_everything() {
+        let deps_list = gets_ok(r#"  "#, DepType::Regular);
+        let deps_list = deps_list.node;
+        let deps_list_children: Vec<SyntaxNode> = deps_list.children().collect();
+        assert_eq!(deps_list_children.len(), 0);
     }
 
     #[test]
