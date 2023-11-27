@@ -204,7 +204,14 @@ fn perform_op(
     // read replit.nix file
     let mut contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
-        Err(_) => EMPTY_TEMPLATE.to_string(),
+        // if replit.nix doesn't exist start with an empty one
+        Err(err) if err.kind() == io::ErrorKind::NotFound => EMPTY_TEMPLATE.to_string(),
+        Err(_) => {
+            return (
+                "error".to_string(),
+                Some(format!("error: reading file - {:?}", &replit_nix_filepath)),
+            )
+        }
     };
 
     let root = rnix::Root::parse(&contents).syntax().clone_for_update();
