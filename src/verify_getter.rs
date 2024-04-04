@@ -61,7 +61,15 @@ fn verify_get_regular(attr_set: &SyntaxNode) -> Result<SyntaxNodeAndWhitespace> 
     let deps = deps.node;
     verify_eq!(deps.kind(), SyntaxKind::NODE_ATTRPATH_VALUE);
 
-    let deps_list = get_nth_child(&deps, 1).context("expected to have two children")?;
+    let value = get_nth_child(&deps, 1).context("expected to have two children")?;
+
+    let deps_list = match value.kind() {
+        SyntaxKind::NODE_LIST => value,
+        SyntaxKind::NODE_WITH => {
+            get_nth_child(&value, 1).context("expected to have at least two children")?
+        }
+        _ => bail!("unexpected value for deps, expected either with pkgs; or a list"),
+    };
     verify_eq!(deps_list.kind(), SyntaxKind::NODE_LIST);
 
     Ok(SyntaxNodeAndWhitespace {

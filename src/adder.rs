@@ -138,6 +138,27 @@ mod add_tests {
         )
     }
 
+    #[test]
+    fn test_with_pkgs_add() {
+        test_add(
+            DepType::Regular,
+            "pkgs.ncdu",
+            r#"{ pkgs }: {
+  deps = with pkgs; [
+    test
+  ];
+}
+        "#,
+            r#"{ pkgs }: {
+  deps = with pkgs; [
+    pkgs.ncdu
+    test
+  ];
+}
+        "#,
+        )
+    }
+
     const PYTHON_REPLIT_NIX: &str = r#"{ pkgs }: {
   deps = [
     pkgs.python38Full
