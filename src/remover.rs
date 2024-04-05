@@ -77,6 +77,42 @@ mod remove_tests {
     }
 
     #[test]
+    fn test_regular_remove_with_pkgs_dep() {
+        let contents = r#"{ pkgs }: {
+  deps = with pkgs; [
+    pkgs.ncdu
+    test
+  ];
+}
+        "#;
+
+        let tree = rnix::Root::parse(&contents).syntax();
+        let deps_list_res = verify_get(&tree, DepType::Regular);
+        assert!(deps_list_res.is_ok());
+
+        let deps_list = deps_list_res.unwrap();
+
+        let dep_to_remove = "pkgs.ncdu";
+
+        let new_contents = remove_dep(
+            &mut contents.to_string(),
+            deps_list.node,
+            Some(dep_to_remove.to_string()),
+        );
+        assert!(new_contents.is_ok());
+
+        let new_contents = new_contents.unwrap();
+
+        let expected_contents = r#"{ pkgs }: {
+  deps = with pkgs; [
+    test
+  ];
+}
+        "#;
+        assert_eq!(new_contents, expected_contents);
+    }
+
+    #[test]
     fn test_regular_remove_dep() {
         let mut contents = python_replit_nix();
         let tree = rnix::Root::parse(&contents).syntax();
