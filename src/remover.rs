@@ -17,8 +17,8 @@ pub fn remove_dep(
     let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
     let remove_end: usize = range_to_remove.end().into();
 
-    let (before, _) = contents.split_at(remove_start);
-    let after = contents.chars().skip(remove_end).collect::<String>();
+    let (before, mid) = contents.split_at(remove_start);
+    let (_, after) = mid.split_at(remove_end + text_start - remove_start);
 
     Ok(format!("{}{}", before, after))
 }
