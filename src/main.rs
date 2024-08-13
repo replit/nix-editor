@@ -235,7 +235,7 @@ fn perform_op(
 
     let op_res = match op {
         OpKind::Add => add_dep(deps_list, dep).map(|_| root.to_string()),
-        OpKind::Remove => remove_dep(&mut contents.clone(), deps_list.node, dep),
+        OpKind::Remove => remove_dep(&contents, deps_list.node, dep),
         OpKind::Get => {
             let deps = match get_deps(deps_list.node) {
                 Ok(deps) => deps,
