@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use rnix::{SyntaxNode, TextRange};
 
 pub fn remove_dep(
-    contents: &mut String,
+    contents: &str,
     deps_list: SyntaxNode,
     remove_dep_opt: Option<String>,
 ) -> Result<String> {
@@ -17,14 +17,10 @@ pub fn remove_dep(
     let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
     let remove_end: usize = range_to_remove.end().into();
 
-    let new_contents = contents.split_off(remove_start);
-    let end_section = new_contents
-        .chars()
-        .skip(remove_end - remove_start)
-        .collect::<String>();
-    contents.push_str(&end_section);
+    let (before, rest) = contents.split_at(remove_start);
+    let (_, after) = rest.split_at(remove_end - remove_start);
 
-    Ok(contents.to_string())
+    Ok(format!("{}{}", before, after))
 }
 
 fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
@@ -94,11 +90,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.ncdu";
 
-        let new_contents = remove_dep(
-            &mut contents.to_string(),
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -114,7 +106,7 @@ mod remove_tests {
 
     #[test]
     fn test_regular_remove_dep() {
-        let mut contents = python_replit_nix();
+        let contents = python_replit_nix();
         let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(&tree, DepType::Regular);
         assert!(deps_list_res.is_ok());
@@ -123,11 +115,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.python38Full";
 
-        let new_contents = remove_dep(
-            &mut contents,
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -154,7 +142,7 @@ mod remove_tests {
 
     #[test]
     fn test_python_remove_dep() {
-        let mut contents = python_replit_nix();
+        let contents = python_replit_nix();
         let tree = rnix::Root::parse(&contents).syntax();
         let deps_list_res = verify_get(&tree, DepType::Python);
         assert!(deps_list_res.is_ok());
@@ -163,11 +151,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.glib";
 
-        let new_contents = remove_dep(
-            &mut contents,
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();

@@ -202,7 +202,7 @@ fn perform_op(
     }
 
     // read replit.nix file
-    let mut contents = match fs::read_to_string(replit_nix_filepath) {
+    let contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
         // if replit.nix doesn't exist start with an empty one
         Err(err) if err.kind() == io::ErrorKind::NotFound => EMPTY_TEMPLATE.to_string(),
@@ -228,7 +228,7 @@ fn perform_op(
 
     let op_res = match op {
         OpKind::Add => add_dep(deps_list, dep).map(|_| root.to_string()),
-        OpKind::Remove => remove_dep(&mut contents, deps_list.node, dep),
+        OpKind::Remove => remove_dep(&contents, deps_list.node, dep),
         OpKind::Get => {
             let deps = match get_deps(deps_list.node) {
                 Ok(deps) => deps,
@@ -314,6 +314,13 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
 mod integration_tests {
     use super::*;
 
+    const TEMPLATE: &str = r#"{pkgs}: {
+  deps = [
+    pkgs.cowsay
+  ];
+}
+"#;
+
     #[test]
     fn test_integration_makes_template_if_missing() {
         let dir = tempfile::tempdir().unwrap();
@@ -398,5 +405,28 @@ mod integration_tests {
         let modification_time2 = metadata.modified().unwrap();
 
         assert_eq!(modification_time, modification_time2);
+    }
+
+    #[test]
+    fn test_integration_remove_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repl_nix_file = dir.path().join("replit.nix");
+
+        fs::write(repl_nix_file.as_os_str(), TEMPLATE.as_bytes()).unwrap();
+        let args = Args {
+            path: Some(repl_nix_file.clone().display().to_string()),
+            dep_type: DepType::Regular,
+            remove: Some("pkgs.cowsay".to_string()),
+            verbose: true,
+            ..Default::default()
+        };
+        real_main(args.clone());
+
+        let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
+
+        assert_eq!("{pkgs}: {\n  deps = [\n  ];\n}\n", contents);
+
+        drop(repl_nix_file);
+        dir.close().unwrap();
     }
 }
