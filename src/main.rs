@@ -28,6 +28,10 @@ struct Args {
     #[clap(short, long, value_parser)]
     remove: Option<String>,
 
+    // print current deps
+    #[clap(short, long, value_parser, default_value = "false")]
+    get: bool,
+
     // filepath for replit.nix file
     #[clap(short, long, value_parser)]
     path: Option<String>,
@@ -93,10 +97,10 @@ struct Res {
 fn main() {
     // handle command line args
     let args = Args::parse();
-    real_main(args)
+    real_main(&mut io::stdout(), args)
 }
 
-fn real_main(args: Args) {
+fn real_main(stdout: &mut dyn io::Write, args: Args) {
     let replit_nix_file = "./replit.nix";
     let default_replit_nix_filepath: String = match env::var("REPL_HOME") {
         Ok(repl_home) => Path::new(repl_home.as_str())
@@ -112,13 +116,32 @@ fn real_main(args: Args) {
     let human_readable = args.human;
     let verbose = args.verbose;
 
-    // if user explicitly passes in a add or remove dep, then we only handle that specific op
-    if let Some(add_dep) = args.add {
+    if args.get {
         if verbose {
-            println!("add_dep");
+            writeln!(stdout, "get_dep").unwrap();
         }
 
         let (status, data) = perform_op(
+            stdout,
+            OpKind::Get,
+            None,
+            args.dep_type,
+            &replit_nix_filepath,
+            verbose,
+            args.return_output,
+        );
+        send_res(stdout, &status, data, human_readable);
+        return;
+    }
+
+    // if user explicitly passes in a add or remove dep, then we only handle that specific op
+    if let Some(add_dep) = args.add {
+        if verbose {
+            writeln!(stdout, "add_dep").unwrap();
+        }
+
+        let (status, data) = perform_op(
+            stdout,
             OpKind::Add,
             Some(add_dep),
             args.dep_type,
@@ -126,16 +149,17 @@ fn real_main(args: Args) {
             verbose,
             args.return_output,
         );
-        send_res(&status, data, human_readable);
+        send_res(stdout, &status, data, human_readable);
         return;
     }
 
     if let Some(remove_dep) = args.remove {
         if verbose {
-            println!("remove_dep");
+            writeln!(stdout, "remove_dep").unwrap();
         }
 
         let (status, data) = perform_op(
+            stdout,
             OpKind::Remove,
             Some(remove_dep),
             args.dep_type,
@@ -143,12 +167,12 @@ fn real_main(args: Args) {
             verbose,
             args.return_output,
         );
-        send_res(&status, data, human_readable);
+        send_res(stdout, &status, data, human_readable);
         return;
     }
 
     if verbose {
-        println!("reading from stdin");
+        writeln!(stdout, "reading from stdin").unwrap();
     }
 
     let stdin = io::stdin();
@@ -158,12 +182,18 @@ fn real_main(args: Args) {
                 let json: Op = match from_str(&line) {
                     Ok(json_val) => json_val,
                     Err(_) => {
-                        send_res("error", Some("Invalid JSON".to_string()), human_readable);
+                        send_res(
+                            stdout,
+                            "error",
+                            Some("Invalid JSON".to_string()),
+                            human_readable,
+                        );
                         continue;
                     }
                 };
 
                 let (status, data) = perform_op(
+                    stdout,
                     json.op,
                     json.dep,
                     json.dep_type.unwrap_or(args.dep_type),
@@ -171,10 +201,11 @@ fn real_main(args: Args) {
                     verbose,
                     args.return_output,
                 );
-                send_res(&status, data, human_readable);
+                send_res(stdout, &status, data, human_readable);
             }
             Err(_) => {
                 send_res(
+                    stdout,
                     "error",
                     Some("Could not read stdin".to_string()),
                     human_readable,
@@ -190,6 +221,7 @@ const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
 "#;
 
 fn perform_op(
+    stdout: &mut dyn io::Write,
     op: OpKind,
     dep: Option<String>,
     dep_type: DepType,
@@ -198,7 +230,7 @@ fn perform_op(
     return_output: bool,
 ) -> (String, Option<String>) {
     if verbose {
-        println!("perform_op: {:?} {:?}", op, dep);
+        writeln!(stdout, "perform_op: {:?} {:?}", op, dep).unwrap();
     }
 
     // read replit.nix file
@@ -271,14 +303,14 @@ fn perform_op(
     }
 }
 
-fn send_res(status: &str, data: Option<String>, human_readable: bool) {
+fn send_res(stdout: &mut dyn io::Write, status: &str, data: Option<String>, human_readable: bool) {
     if human_readable {
         let mut out = status.to_owned();
 
         if let Some(data) = data {
             out += &(": ".to_string() + &data);
         }
-        println!("{}", out);
+        writeln!(stdout, "{}", out).unwrap();
         return;
     }
 
@@ -291,16 +323,16 @@ fn send_res(status: &str, data: Option<String>, human_readable: bool) {
         Ok(json) => json,
         Err(_) => {
             if human_readable {
-                println!("error: Could not serialize to JSON");
+                writeln!(stdout, "error: Could not serialize to JSON").unwrap();
             } else {
                 let err_msg = r#"{"status": "error", "data": "Could not serialize to JSON"}"#;
-                println!("{}", err_msg);
+                writeln!(stdout, "{}", err_msg).unwrap();
             }
             return;
         }
     };
 
-    println!("{}", json);
+    writeln!(stdout, "{}", json).unwrap();
 }
 
 fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
@@ -331,7 +363,7 @@ mod integration_tests {
             add: Some("pkgs.ncdu".to_string()),
             ..Default::default()
         };
-        real_main(args);
+        real_main(&mut io::stdout(), args);
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
@@ -362,7 +394,7 @@ mod integration_tests {
             add: Some("pkgs.zlib".to_string()),
             ..Default::default()
         };
-        real_main(args);
+        real_main(&mut io::stdout(), args);
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
@@ -394,12 +426,12 @@ mod integration_tests {
             add: Some("pkgs.zlib".to_string()),
             ..Default::default()
         };
-        real_main(args.clone());
+        real_main(&mut io::stdout(), args.clone());
 
         let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
         let modification_time = metadata.modified().unwrap();
 
-        real_main(args);
+        real_main(&mut io::stdout(), args);
 
         let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
         let modification_time2 = metadata.modified().unwrap();
@@ -417,14 +449,37 @@ mod integration_tests {
             path: Some(repl_nix_file.clone().display().to_string()),
             dep_type: DepType::Regular,
             remove: Some("pkgs.cowsay".to_string()),
-            verbose: true,
             ..Default::default()
         };
-        real_main(args.clone());
+        real_main(&mut io::stdout(), args.clone());
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
         assert_eq!("{pkgs}: {\n  deps = [\n  ];\n}\n", contents);
+
+        drop(repl_nix_file);
+        dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_integration_get() {
+        let dir = tempfile::tempdir().unwrap();
+        let repl_nix_file = dir.path().join("replit.nix");
+
+        fs::write(repl_nix_file.as_os_str(), TEMPLATE.as_bytes()).unwrap();
+        let args = Args {
+            path: Some(repl_nix_file.clone().display().to_string()),
+            get: true,
+            ..Default::default()
+        };
+        let mut stdout = Vec::new();
+        real_main(&mut stdout, args.clone());
+
+        assert_eq!(
+            stdout,
+            br#"{"status":"success","data":"pkgs.cowsay"}
+"#
+        );
 
         drop(repl_nix_file);
         dir.close().unwrap();
