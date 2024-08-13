@@ -189,13 +189,6 @@ const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
 }
 "#;
 
-const TEMPLATE: &str = r#"{pkgs}: {
-  deps = [
-    pkgs.cowsay
-  ];
-}
-"#;
-
 fn perform_op(
     op: OpKind,
     dep: Option<String>,
@@ -321,6 +314,13 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
 mod integration_tests {
     use super::*;
 
+    const TEMPLATE: &str = r#"{pkgs}: {
+  deps = [
+    pkgs.cowsay
+  ];
+}
+"#;
+
     #[test]
     fn test_integration_makes_template_if_missing() {
         let dir = tempfile::tempdir().unwrap();
@@ -424,8 +424,7 @@ mod integration_tests {
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
-        assert_eq!("{pkgs}: {\n  deps = [\n  ];\n}\n",
-                   contents);
+        assert_eq!("{pkgs}: {\n  deps = [\n  ];\n}\n", contents);
 
         drop(repl_nix_file);
         dir.close().unwrap();

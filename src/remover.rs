@@ -17,11 +17,8 @@ pub fn remove_dep(
     let remove_start: usize = search_backwards_non_whitespace(text_start, contents);
     let remove_end: usize = range_to_remove.end().into();
 
-    let (before,_) = contents.split_at(remove_start);
-    let after = contents
-        .chars()
-        .skip(remove_end)
-        .collect::<String>();
+    let (before, _) = contents.split_at(remove_start);
+    let after = contents.chars().skip(remove_end).collect::<String>();
 
     Ok(format!("{}{}", before, after))
 }
@@ -93,11 +90,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.ncdu";
 
-        let new_contents = remove_dep(
-            &contents,
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -122,11 +115,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.python38Full";
 
-        let new_contents = remove_dep(
-            &contents,
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
@@ -162,11 +151,7 @@ mod remove_tests {
 
         let dep_to_remove = "pkgs.glib";
 
-        let new_contents = remove_dep(
-            &contents,
-            deps_list.node,
-            Some(dep_to_remove.to_string()),
-        );
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
         assert!(new_contents.is_ok());
 
         let new_contents = new_contents.unwrap();
