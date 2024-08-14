@@ -100,7 +100,7 @@ fn main() {
     real_main(&mut io::stdout(), args)
 }
 
-fn real_main(stdout: &mut dyn io::Write, args: Args) {
+fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
     let replit_nix_file = "./replit.nix";
     let default_replit_nix_filepath: String = match env::var("REPL_HOME") {
         Ok(repl_home) => Path::new(repl_home.as_str())
@@ -220,8 +220,8 @@ const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
 }
 "#;
 
-fn perform_op(
-    stdout: &mut dyn io::Write,
+fn perform_op<W: io::Write>(
+    stdout: &mut W,
     op: OpKind,
     dep: Option<String>,
     dep_type: DepType,
@@ -303,7 +303,12 @@ fn perform_op(
     }
 }
 
-fn send_res(stdout: &mut dyn io::Write, status: &str, data: Option<String>, human_readable: bool) {
+fn send_res<W: io::Write>(
+    stdout: &mut W,
+    status: &str,
+    data: Option<String>,
+    human_readable: bool,
+) {
     if human_readable {
         let mut out = status.to_owned();
 
