@@ -8,8 +8,11 @@ pub fn remove_dep(
 ) -> Result<String> {
     let remove_dep = remove_dep_opt.context("error: expected dep to remove")?;
 
-    let range_to_remove = find_remove_dep(deps_list, &remove_dep)
-        .context("error: could not find dependency to remove")?;
+    let search = find_remove_dep(deps_list, &remove_dep);
+    if search.is_err() {
+        return Ok(contents.to_string());
+    }
+    let range_to_remove = search?;
     let text_start: usize = range_to_remove.start().into();
 
     // since there may be leading white space, we need to remove the leading white space
@@ -102,6 +105,30 @@ mod remove_tests {
 }
         "#;
         assert_eq!(new_contents, expected_contents);
+    }
+
+    #[test]
+    fn test_remove_idempotent_dep() {
+        let contents = r#"{ pkgs }: {
+  deps = with pkgs; [
+  ];
+}
+        "#;
+
+        let tree = rnix::Root::parse(&contents).syntax();
+        let deps_list_res = verify_get(&tree, DepType::Regular);
+        assert!(deps_list_res.is_ok());
+
+        let deps_list = deps_list_res.unwrap();
+
+        let dep_to_remove = "pkgs.cowsay";
+
+        let new_contents = remove_dep(&contents, deps_list.node, Some(dep_to_remove.to_string()));
+        assert!(new_contents.is_ok());
+
+        let new_contents = new_contents.unwrap();
+
+        assert_eq!(new_contents, contents);
     }
 
     #[test]
