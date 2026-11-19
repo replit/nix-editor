@@ -1,4 +1,5 @@
 mod adder;
+mod flake;
 mod remover;
 mod verify_getter;
 
@@ -32,7 +33,7 @@ struct Args {
     #[clap(short, long, value_parser, default_value = "false")]
     get: bool,
 
-    // filepath for replit.nix file
+    // filepath for the Nix file
     #[clap(short, long, value_parser)]
     path: Option<String>,
 
@@ -40,7 +41,7 @@ struct Args {
     #[clap(short, long, value_parser, default_value = "false")]
     human: bool,
 
-    // dep type - used for setting special dep types in the replit.nix file
+    // dep type - regular, python, or flake devShell packages
     #[clap(short, long, arg_enum, default_value = "regular")]
     dep_type: DepType,
 
@@ -73,6 +74,9 @@ pub enum DepType {
 
     #[serde(rename = "python")]
     Python,
+
+    #[serde(rename = "flake")]
+    Flake,
 }
 
 impl Default for DepType {
@@ -97,11 +101,17 @@ struct Res {
 fn main() {
     // handle command line args
     let args = Args::parse();
-    real_main(&mut io::stdout(), args)
+    if !real_main(&mut io::stdout(), args) {
+        std::process::exit(1);
+    }
 }
 
-fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
-    let replit_nix_file = "./replit.nix";
+fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
+    let replit_nix_file = if matches!(args.dep_type, DepType::Flake) {
+        "./flake.nix"
+    } else {
+        "./replit.nix"
+    };
     let default_replit_nix_filepath: String = match env::var("REPL_HOME") {
         Ok(repl_home) => Path::new(repl_home.as_str())
             .join(replit_nix_file)
@@ -111,6 +121,11 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
         Err(_) => replit_nix_file.to_string(),
     };
 
+    let flake_nix_filepath = args.path.clone().unwrap_or_else(|| {
+        env::var("REPL_HOME")
+            .map(|home| Path::new(&home).join("flake.nix").display().to_string())
+            .unwrap_or_else(|_| "./flake.nix".to_string())
+    });
     let replit_nix_filepath = args.path.unwrap_or_else(|| default_replit_nix_filepath);
 
     let human_readable = args.human;
@@ -131,7 +146,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
             args.return_output,
         );
         send_res(stdout, &status, data, human_readable);
-        return;
+        return status == "success" || !matches!(args.dep_type, DepType::Flake);
     }
 
     // if user explicitly passes in a add or remove dep, then we only handle that specific op
@@ -150,7 +165,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
             args.return_output,
         );
         send_res(stdout, &status, data, human_readable);
-        return;
+        return status == "success" || !matches!(args.dep_type, DepType::Flake);
     }
 
     if let Some(remove_dep) = args.remove {
@@ -168,7 +183,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
             args.return_output,
         );
         send_res(stdout, &status, data, human_readable);
-        return;
+        return status == "success" || !matches!(args.dep_type, DepType::Flake);
     }
 
     if verbose {
@@ -176,6 +191,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
     }
 
     let stdin = io::stdin();
+    let mut success = true;
     for line in stdin.lock().lines() {
         match line {
             Ok(line) => {
@@ -197,11 +213,18 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
                     json.op,
                     json.dep,
                     json.dep_type.unwrap_or(args.dep_type),
-                    &replit_nix_filepath,
+                    if matches!(json.dep_type.unwrap_or(args.dep_type), DepType::Flake) {
+                        &flake_nix_filepath
+                    } else {
+                        &replit_nix_filepath
+                    },
                     verbose,
                     args.return_output,
                 );
                 send_res(stdout, &status, data, human_readable);
+                if matches!(json.dep_type.unwrap_or(args.dep_type), DepType::Flake) {
+                    success &= status == "success";
+                }
             }
             Err(_) => {
                 send_res(
@@ -213,6 +236,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) {
             }
         }
     }
+    success
 }
 
 const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
@@ -237,7 +261,11 @@ fn perform_op<W: io::Write>(
     let contents = match fs::read_to_string(replit_nix_filepath) {
         Ok(contents) => contents,
         // if replit.nix doesn't exist start with an empty one
-        Err(err) if err.kind() == io::ErrorKind::NotFound => EMPTY_TEMPLATE.to_string(),
+        Err(err)
+            if err.kind() == io::ErrorKind::NotFound && !matches!(dep_type, DepType::Flake) =>
+        {
+            EMPTY_TEMPLATE.to_string()
+        }
         Err(_) => {
             return (
                 "error".to_string(),
@@ -246,14 +274,31 @@ fn perform_op<W: io::Write>(
         }
     };
 
-    let root = rnix::Root::parse(&contents).syntax().clone_for_update();
+    if matches!(dep_type, DepType::Flake) && !matches!(op, OpKind::Add) {
+        return (
+            "error".to_string(),
+            Some("flake: only add operations are supported".to_string()),
+        );
+    }
+    let parsed = rnix::Root::parse(&contents);
+    if matches!(dep_type, DepType::Flake) && !parsed.errors().is_empty() {
+        return (
+            "error".to_string(),
+            Some("flake: invalid Nix syntax".to_string()),
+        );
+    }
+    let root = parsed.syntax().clone_for_update();
 
     let deps_list = match verify_get(&root, dep_type) {
         Ok(deps_list) => deps_list,
-        Err(_) => {
+        Err(err) => {
             return (
                 "error".to_string(),
-                Some("Could not verify and get".to_string()),
+                Some(if matches!(dep_type, DepType::Flake) {
+                    err.to_string()
+                } else {
+                    "Could not verify and get".to_string()
+                }),
             );
         }
     };
@@ -291,7 +336,7 @@ fn perform_op<W: io::Write>(
     }
 
     // write new replit.nix file
-    match fs::write(&replit_nix_filepath, new_contents) {
+    match atomic_write(Path::new(replit_nix_filepath), &new_contents) {
         Ok(_) => ("success".to_string(), None),
         Err(err) => (
             "error".to_string(),
@@ -301,6 +346,29 @@ fn perform_op<W: io::Write>(
             )),
         ),
     }
+}
+
+fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
+    // Preserve the existing behavior of following symbolic links.
+    let destination = if path.is_symlink() {
+        fs::canonicalize(path)?
+    } else {
+        path.to_path_buf()
+    };
+    let dir = destination
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(dir)?;
+    if let Ok(metadata) = fs::metadata(&destination) {
+        temporary
+            .as_file()
+            .set_permissions(metadata.permissions())?;
+    }
+    temporary.write_all(contents.as_bytes())?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(&destination).map_err(|err| err.error)?;
+    fs::File::open(dir)?.sync_all()
 }
 
 fn send_res<W: io::Write>(
