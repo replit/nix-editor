@@ -50,7 +50,7 @@ fn refuse(source: &str, reason: &str) {
 fn v2_template_and_json() {
     let expected = TEMPLATE.replace(
         "[ nm.replit nm.nodejs-24 ]",
-        "[\n  pkgs.figlet\n nm.replit nm.nodejs-24 ]",
+        "[ nm.replit nm.nodejs-24 pkgs.figlet ]",
     );
     for json in [false, true] {
         let (output, contents) = run(TEMPLATE, json);
@@ -61,10 +61,12 @@ fn v2_template_and_json() {
 
 #[test]
 fn empty_list() {
-    let source = TEMPLATE.replace("[ nm.replit nm.nodejs-24 ]", "[]");
-    let (output, contents) = run(&source, false);
-    assert!(output.status.success());
-    assert_eq!(contents, source.replace("[]", "[\n  pkgs.figlet\n]"));
+    for empty in ["[]", "[ ]"] {
+        let source = TEMPLATE.replace("[ nm.replit nm.nodejs-24 ]", empty);
+        let (output, contents) = run(&source, false);
+        assert!(output.status.success());
+        assert_eq!(contents, source.replace(empty, "[ pkgs.figlet ]"));
+    }
 }
 
 #[test]
@@ -77,7 +79,38 @@ fn multiline_list() {
     assert!(output.status.success());
     assert_eq!(
         contents,
-        source.replace("packages = [", "packages = [\n      pkgs.figlet")
+        source.replace("nm.nodejs-24\n", "nm.nodejs-24\n      pkgs.figlet\n")
+    );
+}
+
+#[test]
+fn multiline_preserves_element_indentation_and_comments() {
+    let source = TEMPLATE.replace(
+        "[ nm.replit nm.nodejs-24 ]",
+        "[\n\t nm.replit\n\t nm.nodejs-24 # keep this comment\n    ]",
+    );
+    let (output, contents) = run(&source, false);
+    assert!(output.status.success());
+    assert_eq!(
+        contents,
+        source.replace(
+            "# keep this comment\n",
+            "# keep this comment\n\t pkgs.figlet\n"
+        )
+    );
+}
+
+#[test]
+fn empty_multiline_list() {
+    let source = TEMPLATE.replace(
+        "packages = [ nm.replit nm.nodejs-24 ];",
+        "\n    packages = [\n    ];",
+    );
+    let (output, contents) = run(&source, false);
+    assert!(output.status.success());
+    assert_eq!(
+        contents,
+        source.replace("[\n    ]", "[\n      pkgs.figlet\n    ]")
     );
 }
 

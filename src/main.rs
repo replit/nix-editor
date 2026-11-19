@@ -304,6 +304,9 @@ fn perform_op<W: io::Write>(
     };
 
     let op_res = match op {
+        OpKind::Add if matches!(dep_type, DepType::Flake) => {
+            flake::add_dep(&contents, deps_list, dep)
+        }
         OpKind::Add => add_dep(deps_list, dep).map(|_| root.to_string()),
         OpKind::Remove => remove_dep(&contents, deps_list.node, dep),
         OpKind::Get => {

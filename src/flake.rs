@@ -5,6 +5,64 @@ use crate::verify_getter::SyntaxNodeAndWhitespace;
 
 const TARGET: &[&str] = &["devShells", "x86_64-linux", "default"];
 
+pub fn add_dep(
+    contents: &str,
+    list: SyntaxNodeAndWhitespace,
+    dep: Option<String>,
+) -> Result<String> {
+    let dep = dep.context("error: no dependency")?;
+    if list
+        .node
+        .children()
+        .any(|existing| existing.to_string() == dep)
+    {
+        return Ok(contents.to_string());
+    }
+    let text = list.node.to_string();
+    let body = &text[..text.len() - 1];
+    let replacement = if !text.contains('\n') {
+        format!("{} {} ]", body.trim_end(), dep)
+    } else {
+        let base_indent = list
+            .whitespace
+            .as_ref()
+            .and_then(|token| token.text().rsplit('\n').next())
+            .unwrap_or("");
+        let indent = list
+            .node
+            .children()
+            .filter_map(|element| {
+                let start = usize::from(element.text_range().start());
+                let prefix = contents[..start].rsplit('\n').next()?;
+                prefix
+                    .chars()
+                    .all(|ch| ch == ' ' || ch == '\t')
+                    .then(|| prefix.to_string())
+            })
+            .last()
+            .unwrap_or_else(|| format!("{}  ", base_indent));
+        match body.rfind('\n') {
+            Some(newline) if body[newline + 1..].trim().is_empty() => {
+                format!(
+                    "{}\n{}{}{}]",
+                    &body[..newline],
+                    indent,
+                    dep,
+                    &body[newline..]
+                )
+            }
+            _ => format!("{}\n{}{}\n{}]", body.trim_end(), indent, dep, base_indent),
+        }
+    };
+    let range = list.node.text_range();
+    let mut result = contents.to_string();
+    result.replace_range(
+        usize::from(range.start())..usize::from(range.end()),
+        &replacement,
+    );
+    Ok(result)
+}
+
 fn path_is(node: &SyntaxNode, path: &[&str]) -> bool {
     node.kind() == NODE_ATTRPATH_VALUE
         && node.first_child().is_some_and(|key| {
