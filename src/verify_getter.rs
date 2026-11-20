@@ -27,6 +27,9 @@ pub struct SyntaxNodeAndWhitespace {
 // it will return an error. Since nix is so complex, we have to require some
 // assumptions about the AST, or else it'll be impossible to do anything.
 pub fn verify_get(root: &SyntaxNode, dep_type: DepType) -> Result<SyntaxNodeAndWhitespace> {
+    if matches!(dep_type, DepType::Flake) {
+        return crate::flake::verify_get(root);
+    }
     verify_eq!(root.kind(), SyntaxKind::NODE_ROOT);
 
     if root.children().count() == 0 {
@@ -49,6 +52,7 @@ pub fn verify_get(root: &SyntaxNode, dep_type: DepType) -> Result<SyntaxNodeAndW
     let deps_list = match dep_type {
         DepType::Regular => verify_get_regular(&attr_set)?,
         DepType::Python => verify_get_python(&attr_set)?,
+        DepType::Flake => unreachable!(),
     };
 
     Ok(deps_list)
