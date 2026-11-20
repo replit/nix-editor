@@ -273,27 +273,21 @@ fn perform_op<W: io::Write>(
     if matches!(dep_type, DepType::Flake) && !matches!(op, OpKind::Add) {
         return Err("flake: only add operations are supported".to_string());
     }
-    let parsed = rnix::Root::parse(&contents);
-    if matches!(dep_type, DepType::Flake) && !parsed.errors().is_empty() {
-        return Err("flake: invalid Nix syntax".to_string());
+    if matches!(dep_type, DepType::Flake) {
+        if return_output {
+            return edit_flake(&contents, dep).map(Some);
+        }
+        return write_flake(Path::new(replit_nix_filepath), contents, dep, |_| {});
     }
+    let parsed = rnix::Root::parse(&contents);
     let root = parsed.syntax().clone_for_update();
 
     let deps_list = match verify_get(&root, dep_type) {
         Ok(deps_list) => deps_list,
-        Err(err) => {
-            return Err(if matches!(dep_type, DepType::Flake) {
-                err.to_string()
-            } else {
-                "Could not verify and get".to_string()
-            });
-        }
+        Err(_) => return Err("Could not verify and get".to_string()),
     };
 
     let op_res = match op {
-        OpKind::Add if matches!(dep_type, DepType::Flake) => {
-            flake::add_dep(&contents, deps_list, dep)
-        }
         OpKind::Add => add_dep(deps_list, dep).map(|_| root.to_string()),
         OpKind::Remove => remove_dep(&contents, deps_list.node, dep),
         OpKind::Get => {
@@ -330,6 +324,142 @@ fn perform_op<W: io::Write>(
             replit_nix_filepath, err
         )),
     }
+}
+
+fn edit_flake(contents: &str, dep: Option<String>) -> Result<String, String> {
+    let parsed = rnix::Root::parse(contents);
+    if !parsed.errors().is_empty() {
+        return Err("flake: invalid Nix syntax".to_string());
+    }
+    let root = parsed.syntax().clone_for_update();
+    let list = verify_get(&root, DepType::Flake).map_err(|err| err.to_string())?;
+    flake::add_dep(contents, list, dep).map_err(|_| "Could not perform op".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn exchange_files(first: &Path, second: &Path) -> io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let first = CString::new(first.as_os_str().as_bytes())?;
+    let second = CString::new(second.as_os_str().as_bytes())?;
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            first.as_ptr(),
+            libc::AT_FDCWD,
+            second.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn exchange_files(_first: &Path, _second: &Path) -> io::Result<()> {
+    Err(io::Error::from_raw_os_error(libc::ENOSYS))
+}
+
+fn write_flake(
+    path: &Path,
+    contents: String,
+    dep: Option<String>,
+    mut before_exchange: impl FnMut(usize),
+) -> OpResult {
+    let write_error =
+        |err: io::Error| format!("Could not write to file {}: {}", path.display(), err);
+    let destination = if path.is_symlink() {
+        fs::canonicalize(path).map_err(write_error)?
+    } else {
+        path.to_path_buf()
+    };
+    let dir = destination
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut conflict_name = destination.as_os_str().to_os_string();
+    conflict_name.push(".nix-editor-conflict");
+    let conflict = std::path::PathBuf::from(conflict_name);
+    let preserve = |temporary: tempfile::TempPath| -> Result<(), String> {
+        temporary.persist(&conflict).map_err(|err| {
+            let _ = err.path.keep();
+            write_error(err.error)
+        })?;
+        fs::File::open(dir)
+            .and_then(|dir| dir.sync_all())
+            .map_err(write_error)
+    };
+    let mut expected = contents.clone();
+    let mut base = contents;
+    let mut displaced_copy = None;
+    let result = (|| {
+        for attempt in 0..10 {
+            let (new, edit_error) = match edit_flake(&base, dep.clone()) {
+                Ok(new) => (new, None),
+                Err(err) if attempt > 0 => (base.clone(), Some(err)),
+                Err(err) => return Err(err),
+            };
+            if attempt == 0 && new == expected {
+                return Ok(None);
+            }
+            let mut temporary = tempfile::NamedTempFile::new_in(dir).map_err(write_error)?;
+            if let Ok(metadata) = fs::metadata(&destination) {
+                temporary
+                    .as_file()
+                    .set_permissions(metadata.permissions())
+                    .map_err(write_error)?;
+            }
+            temporary.write_all(new.as_bytes()).map_err(write_error)?;
+            temporary.as_file().sync_all().map_err(write_error)?;
+            before_exchange(attempt);
+            if let Err(err) = exchange_files(temporary.path(), &destination) {
+                if matches!(
+                    err.raw_os_error(),
+                    Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP | libc::ENOENT)
+                ) {
+                    atomic_write(&destination, &new).map_err(write_error)?;
+                    drop(displaced_copy.take());
+                    return edit_error.map_or(Ok(None), Err);
+                }
+                return Err(write_error(err));
+            }
+            // After exchange the handle refers to the published inode; only the path reads the save.
+            let temporary = temporary.into_temp_path();
+            let displaced = match fs::read_to_string(&temporary) {
+                Ok(displaced) => displaced,
+                Err(err) => {
+                    drop(displaced_copy.take());
+                    preserve(temporary)?;
+                    return Err(write_error(err));
+                }
+            };
+            drop(displaced_copy.take());
+            if displaced == expected {
+                temporary.close().map_err(write_error)?;
+                fs::File::open(dir)
+                    .and_then(|dir| dir.sync_all())
+                    .map_err(write_error)?;
+                return edit_error.map_or(Ok(None), Err);
+            }
+            expected = new;
+            base = displaced;
+            displaced_copy = Some(temporary);
+        }
+        preserve(displaced_copy.take().unwrap())?;
+        Err(format!(
+            "flake: flake.nix kept changing during the edit; previous contents saved to {}",
+            conflict.display()
+        ))
+    })();
+    if result.is_err() {
+        if let Some(previous) = displaced_copy.take() {
+            preserve(previous)?;
+        }
+    }
+    result
 }
 
 fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
@@ -401,6 +531,198 @@ fn get_deps(deps_list: SyntaxNode) -> Result<Vec<String>> {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    const FLAKE: &str = "{ outputs = { pkgs }: { devShells.x86_64-linux.default = pkgs.mkShell { packages = []; }; }; }\n";
+
+    #[cfg(target_os = "linux")]
+    fn save_by_rename(path: &Path, contents: &str) {
+        let mut save = tempfile::NamedTempFile::new_in(path.parent().unwrap()).unwrap();
+        save.write_all(contents.as_bytes()).unwrap();
+        save.persist(path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_reconciles_concurrent_save() {
+        for already_added in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("flake.nix");
+            fs::write(&path, FLAKE).unwrap();
+            let saved = format!("{}# saved change\n", FLAKE);
+            let saved = if already_added {
+                saved.replace("[]", "[ pkgs.jq ]")
+            } else {
+                saved
+            };
+            let mut attempts = 0;
+            let result = write_flake(
+                &path,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |attempt| {
+                    attempts += 1;
+                    if attempt == 0 {
+                        save_by_rename(&path, &saved);
+                    }
+                },
+            );
+            assert_eq!(result, Ok(None));
+            assert_eq!(attempts, 2);
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                saved.replace("[]", "[ pkgs.jq ]")
+            );
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_without_concurrent_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("flake.nix");
+        fs::write(&path, FLAKE).unwrap();
+        let expected = edit_flake(FLAKE, Some("pkgs.jq".to_string())).unwrap();
+        let mut attempts = 0;
+        assert_eq!(
+            write_flake(
+                &path,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |_| {
+                    attempts += 1;
+                }
+            ),
+            Ok(None)
+        );
+        assert_eq!(attempts, 1);
+        assert_eq!(fs::read_to_string(&path).unwrap(), expected);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(
+            write_flake(&path, expected, Some("pkgs.jq".to_string()), |_| {
+                panic!("duplicate must not write");
+            }),
+            Ok(None)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_preserves_last_save_on_exhaustion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("flake.nix");
+        fs::write(&path, FLAKE).unwrap();
+        let mut attempts = 0;
+        let result = write_flake(
+            &path,
+            FLAKE.to_string(),
+            Some("pkgs.jq".to_string()),
+            |attempt| {
+                attempts += 1;
+                save_by_rename(&path, &format!("{}# save {}\n", FLAKE, attempt));
+            },
+        );
+        let conflict = dir.path().join("flake.nix.nix-editor-conflict");
+        assert_eq!(attempts, 10);
+        assert_eq!(
+            result,
+            Err(format!(
+                "flake: flake.nix kept changing during the edit; previous contents saved to {}",
+                conflict.display()
+            ))
+        );
+        assert_eq!(
+            fs::read_to_string(conflict).unwrap(),
+            format!("{}# save 9\n", FLAKE)
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_reports_invalid_displaced_base() {
+        for (saved, error) in [
+            ("{", "flake: invalid Nix syntax"),
+            (
+                "{}",
+                "flake: expected a dotted devShells.x86_64-linux.default binding in outputs",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("flake.nix");
+            fs::write(&path, FLAKE).unwrap();
+            let result = write_flake(
+                &path,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |attempt| {
+                    if attempt == 0 {
+                        save_by_rename(&path, saved);
+                    }
+                },
+            );
+            assert_eq!(result, Err(error.to_string()));
+            assert_eq!(fs::read_to_string(&path).unwrap(), saved);
+            assert!(!dir.path().join("flake.nix.nix-editor-conflict").exists());
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_falls_back_when_destination_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("flake.nix");
+        fs::write(&path, FLAKE).unwrap();
+        assert_eq!(
+            write_flake(
+                &path,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |_| {
+                    fs::remove_file(&path).unwrap();
+                }
+            ),
+            Ok(None)
+        );
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            FLAKE.replace("[]", "[ pkgs.jq ]")
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn flake_exchange_follows_symlink_and_preserves_permissions() {
+        use std::os::unix::{fs::symlink, fs::PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("target.nix");
+        let link = dir.path().join("flake.nix");
+        fs::write(&path, FLAKE).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        symlink(&path, &link).unwrap();
+        assert_eq!(
+            write_flake(
+                &link,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |_| {}
+            ),
+            Ok(None)
+        );
+        assert!(link.is_symlink());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            FLAKE.replace("[]", "[ pkgs.jq ]")
+        );
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
 
     const TEMPLATE: &str = r#"{pkgs}: {
   deps = [
