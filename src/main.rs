@@ -7,6 +7,7 @@ use anyhow::Result;
 use rnix::SyntaxNode;
 
 use std::fs;
+use std::process::ExitCode;
 use std::{env, io, io::prelude::*, path::Path};
 
 use serde::{Deserialize, Serialize};
@@ -98,15 +99,18 @@ struct Res {
     data: Option<String>,
 }
 
-fn main() {
+type OpResult = std::result::Result<Option<String>, String>;
+
+fn main() -> ExitCode {
     // handle command line args
     let args = Args::parse();
-    if !real_main(&mut io::stdout(), args) {
-        std::process::exit(1);
+    match real_main(&mut io::stdout(), args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(()) => ExitCode::FAILURE,
     }
 }
 
-fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
+fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> Result<(), ()> {
     let replit_nix_file = if matches!(args.dep_type, DepType::Flake) {
         "./flake.nix"
     } else {
@@ -136,7 +140,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             writeln!(stdout, "get_dep").unwrap();
         }
 
-        let (status, data) = perform_op(
+        let result = perform_op(
             stdout,
             OpKind::Get,
             None,
@@ -145,8 +149,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             verbose,
             args.return_output,
         );
-        send_res(stdout, &status, data, human_readable);
-        return status == "success" || !matches!(args.dep_type, DepType::Flake);
+        return report_result(stdout, result, args.dep_type, human_readable);
     }
 
     // if user explicitly passes in a add or remove dep, then we only handle that specific op
@@ -155,7 +158,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             writeln!(stdout, "add_dep").unwrap();
         }
 
-        let (status, data) = perform_op(
+        let result = perform_op(
             stdout,
             OpKind::Add,
             Some(add_dep),
@@ -164,8 +167,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             verbose,
             args.return_output,
         );
-        send_res(stdout, &status, data, human_readable);
-        return status == "success" || !matches!(args.dep_type, DepType::Flake);
+        return report_result(stdout, result, args.dep_type, human_readable);
     }
 
     if let Some(remove_dep) = args.remove {
@@ -173,7 +175,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             writeln!(stdout, "remove_dep").unwrap();
         }
 
-        let (status, data) = perform_op(
+        let result = perform_op(
             stdout,
             OpKind::Remove,
             Some(remove_dep),
@@ -182,8 +184,7 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
             verbose,
             args.return_output,
         );
-        send_res(stdout, &status, data, human_readable);
-        return status == "success" || !matches!(args.dep_type, DepType::Flake);
+        return report_result(stdout, result, args.dep_type, human_readable);
     }
 
     if verbose {
@@ -191,52 +192,52 @@ fn real_main<W: io::Write>(stdout: &mut W, args: Args) -> bool {
     }
 
     let stdin = io::stdin();
-    let mut success = true;
+    let mut outcome = Ok(());
     for line in stdin.lock().lines() {
-        match line {
-            Ok(line) => {
-                let json: Op = match from_str(&line) {
-                    Ok(json_val) => json_val,
-                    Err(_) => {
-                        send_res(
-                            stdout,
-                            "error",
-                            Some("Invalid JSON".to_string()),
-                            human_readable,
-                        );
-                        continue;
-                    }
-                };
-
-                let (status, data) = perform_op(
-                    stdout,
-                    json.op,
-                    json.dep,
-                    json.dep_type.unwrap_or(args.dep_type),
-                    if matches!(json.dep_type.unwrap_or(args.dep_type), DepType::Flake) {
-                        &flake_nix_filepath
-                    } else {
-                        &replit_nix_filepath
-                    },
-                    verbose,
-                    args.return_output,
-                );
-                send_res(stdout, &status, data, human_readable);
-                if matches!(json.dep_type.unwrap_or(args.dep_type), DepType::Flake) {
-                    success &= status == "success";
+        let (result, dep_type) = match line {
+            Ok(line) => match from_str::<Op>(&line) {
+                Ok(json) => {
+                    let dep_type = json.dep_type.unwrap_or(args.dep_type);
+                    let result = perform_op(
+                        stdout,
+                        json.op,
+                        json.dep,
+                        dep_type,
+                        if matches!(dep_type, DepType::Flake) {
+                            &flake_nix_filepath
+                        } else {
+                            &replit_nix_filepath
+                        },
+                        verbose,
+                        args.return_output,
+                    );
+                    (result, dep_type)
                 }
-            }
-            Err(_) => {
-                send_res(
-                    stdout,
-                    "error",
-                    Some("Could not read stdin".to_string()),
-                    human_readable,
-                );
-            }
+                Err(_) => (Err("Invalid JSON".to_string()), args.dep_type),
+            },
+            Err(_) => (Err("Could not read stdin".to_string()), args.dep_type),
+        };
+        if report_result(stdout, result, dep_type, human_readable).is_err() {
+            outcome = Err(());
         }
     }
-    success
+    outcome
+}
+
+fn report_result<W: io::Write>(
+    stdout: &mut W,
+    result: OpResult,
+    dep_type: DepType,
+    human_readable: bool,
+) -> Result<(), ()> {
+    // Callers parse per-op JSON only on exit 0, so legacy dep types keep exit 0 on op errors.
+    let outcome = if result.is_err() && matches!(dep_type, DepType::Flake) {
+        Err(())
+    } else {
+        Ok(())
+    };
+    send_res(stdout, result, human_readable);
+    outcome
 }
 
 const EMPTY_TEMPLATE: &str = r#"{pkgs}: {
@@ -252,7 +253,7 @@ fn perform_op<W: io::Write>(
     replit_nix_filepath: &str,
     verbose: bool,
     return_output: bool,
-) -> (String, Option<String>) {
+) -> OpResult {
     if verbose {
         writeln!(stdout, "perform_op: {:?} {:?}", op, dep).unwrap();
     }
@@ -266,40 +267,26 @@ fn perform_op<W: io::Write>(
         {
             EMPTY_TEMPLATE.to_string()
         }
-        Err(_) => {
-            return (
-                "error".to_string(),
-                Some(format!("error: reading file - {:?}", &replit_nix_filepath)),
-            )
-        }
+        Err(_) => return Err(format!("error: reading file - {:?}", &replit_nix_filepath)),
     };
 
     if matches!(dep_type, DepType::Flake) && !matches!(op, OpKind::Add) {
-        return (
-            "error".to_string(),
-            Some("flake: only add operations are supported".to_string()),
-        );
+        return Err("flake: only add operations are supported".to_string());
     }
     let parsed = rnix::Root::parse(&contents);
     if matches!(dep_type, DepType::Flake) && !parsed.errors().is_empty() {
-        return (
-            "error".to_string(),
-            Some("flake: invalid Nix syntax".to_string()),
-        );
+        return Err("flake: invalid Nix syntax".to_string());
     }
     let root = parsed.syntax().clone_for_update();
 
     let deps_list = match verify_get(&root, dep_type) {
         Ok(deps_list) => deps_list,
         Err(err) => {
-            return (
-                "error".to_string(),
-                Some(if matches!(dep_type, DepType::Flake) {
-                    err.to_string()
-                } else {
-                    "Could not verify and get".to_string()
-                }),
-            );
+            return Err(if matches!(dep_type, DepType::Flake) {
+                err.to_string()
+            } else {
+                "Could not verify and get".to_string()
+            });
         }
     };
 
@@ -313,41 +300,35 @@ fn perform_op<W: io::Write>(
             let deps = match get_deps(deps_list.node) {
                 Ok(deps) => deps,
                 Err(_) => {
-                    return ("error".to_string(), Some("Could not get deps".to_string()));
+                    return Err("Could not get deps".to_string());
                 }
             };
-            return ("success".to_string(), Some(deps.join(",")));
+            return Ok(Some(deps.join(",")));
         }
     };
 
     let new_contents = match op_res {
         Ok(new_contents) => new_contents,
         Err(_) => {
-            return (
-                "error".to_string(),
-                Some("Could not perform op".to_string()),
-            );
+            return Err("Could not perform op".to_string());
         }
     };
 
     if return_output {
-        return ("success".to_string(), Some(new_contents));
+        return Ok(Some(new_contents));
     }
 
     if new_contents == contents {
-        return ("success".to_string(), None);
+        return Ok(None);
     }
 
     // write new replit.nix file
     match atomic_write(Path::new(replit_nix_filepath), &new_contents) {
-        Ok(_) => ("success".to_string(), None),
-        Err(err) => (
-            "error".to_string(),
-            Some(format!(
-                "Could not write to file {}: {}",
-                replit_nix_filepath, err
-            )),
-        ),
+        Ok(_) => Ok(None),
+        Err(err) => Err(format!(
+            "Could not write to file {}: {}",
+            replit_nix_filepath, err
+        )),
     }
 }
 
@@ -374,12 +355,11 @@ fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
     fs::File::open(dir)?.sync_all()
 }
 
-fn send_res<W: io::Write>(
-    stdout: &mut W,
-    status: &str,
-    data: Option<String>,
-    human_readable: bool,
-) {
+fn send_res<W: io::Write>(stdout: &mut W, result: OpResult, human_readable: bool) {
+    let (status, data) = match result {
+        Ok(data) => ("success", data),
+        Err(message) => ("error", Some(message)),
+    };
     if human_readable {
         let mut out = status.to_owned();
 
@@ -439,7 +419,7 @@ mod integration_tests {
             add: Some("pkgs.ncdu".to_string()),
             ..Default::default()
         };
-        real_main(&mut io::stdout(), args);
+        real_main(&mut io::stdout(), args).unwrap();
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
@@ -470,7 +450,7 @@ mod integration_tests {
             add: Some("pkgs.zlib".to_string()),
             ..Default::default()
         };
-        real_main(&mut io::stdout(), args);
+        real_main(&mut io::stdout(), args).unwrap();
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
@@ -502,12 +482,12 @@ mod integration_tests {
             add: Some("pkgs.zlib".to_string()),
             ..Default::default()
         };
-        real_main(&mut io::stdout(), args.clone());
+        real_main(&mut io::stdout(), args.clone()).unwrap();
 
         let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
         let modification_time = metadata.modified().unwrap();
 
-        real_main(&mut io::stdout(), args);
+        real_main(&mut io::stdout(), args).unwrap();
 
         let metadata = fs::metadata(repl_nix_file.as_os_str()).unwrap();
         let modification_time2 = metadata.modified().unwrap();
@@ -527,7 +507,7 @@ mod integration_tests {
             remove: Some("pkgs.cowsay".to_string()),
             ..Default::default()
         };
-        real_main(&mut io::stdout(), args.clone());
+        real_main(&mut io::stdout(), args.clone()).unwrap();
 
         let contents = fs::read_to_string(repl_nix_file.clone()).unwrap();
 
@@ -549,7 +529,7 @@ mod integration_tests {
             ..Default::default()
         };
         let mut stdout = Vec::new();
-        real_main(&mut stdout, args.clone());
+        real_main(&mut stdout, args.clone()).unwrap();
 
         assert_eq!(
             stdout,
