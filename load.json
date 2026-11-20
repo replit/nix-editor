@@ -1,19 +1,4 @@
 {
-  "checks": 1000,
-  "fresh": 120,
-  "failing": 1,
-  "tiers": 3,
-  "seconds": [
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    15,
-    30
-  ],
-  "generation": "mix-20261120T0052Z"
+  "checks": 1875,
+  "seconds": 5
 }
