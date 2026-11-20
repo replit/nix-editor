@@ -397,7 +397,11 @@ fn write_flake(
     let mut displaced_copy = None;
     let result = (|| {
         for attempt in 0..10 {
-            let new = edit_flake(&base, dep.clone())?;
+            let (new, edit_error) = match edit_flake(&base, dep.clone()) {
+                Ok(new) => (new, None),
+                Err(err) if attempt > 0 => (base.clone(), Some(err)),
+                Err(err) => return Err(err),
+            };
             if attempt == 0 && new == expected {
                 return Ok(None);
             }
@@ -417,7 +421,8 @@ fn write_flake(
                     Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP | libc::ENOENT)
                 ) {
                     atomic_write(&destination, &new).map_err(write_error)?;
-                    return Ok(None);
+                    drop(displaced_copy.take());
+                    return edit_error.map_or(Ok(None), Err);
                 }
                 return Err(write_error(err));
             }
@@ -437,7 +442,7 @@ fn write_flake(
                 fs::File::open(dir)
                     .and_then(|dir| dir.sync_all())
                     .map_err(write_error)?;
-                return Ok(None);
+                return edit_error.map_or(Ok(None), Err);
             }
             expected = new;
             base = displaced;
@@ -637,22 +642,31 @@ mod integration_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn flake_exchange_reports_invalid_displaced_base() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("flake.nix");
-        fs::write(&path, FLAKE).unwrap();
-        let result = write_flake(
-            &path,
-            FLAKE.to_string(),
-            Some("pkgs.jq".to_string()),
-            |_| {
-                save_by_rename(&path, "{");
-            },
-        );
-        assert_eq!(result, Err("flake: invalid Nix syntax".to_string()));
-        assert_eq!(
-            fs::read_to_string(dir.path().join("flake.nix.nix-editor-conflict")).unwrap(),
-            "{"
-        );
+        for (saved, error) in [
+            ("{", "flake: invalid Nix syntax"),
+            (
+                "{}",
+                "flake: expected a dotted devShells.x86_64-linux.default binding in outputs",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("flake.nix");
+            fs::write(&path, FLAKE).unwrap();
+            let result = write_flake(
+                &path,
+                FLAKE.to_string(),
+                Some("pkgs.jq".to_string()),
+                |attempt| {
+                    if attempt == 0 {
+                        save_by_rename(&path, saved);
+                    }
+                },
+            );
+            assert_eq!(result, Err(error.to_string()));
+            assert_eq!(fs::read_to_string(&path).unwrap(), saved);
+            assert!(!dir.path().join("flake.nix.nix-editor-conflict").exists());
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
     }
 
     #[cfg(target_os = "linux")]
