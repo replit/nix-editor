@@ -1,6 +1,19 @@
 {
-  "checks": 5000,
-  "fresh": 0,
-  "seconds": 5,
-  "generation": "mix-20261120T0052Z-3"
+  "checks": 1000,
+  "fresh": 120,
+  "failing": 1,
+  "tiers": 3,
+  "seconds": [
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    15,
+    30
+  ],
+  "generation": "mix-20261120T0052Z"
 }
