@@ -27,15 +27,12 @@ pub fn remove_dep(
 }
 
 fn search_backwards_non_whitespace(start_pos: usize, contents: &str) -> usize {
-    let mut pos = start_pos;
-    while pos > 0 {
-        let c = contents.chars().nth(pos - 1).unwrap();
-        if !c.is_whitespace() {
-            return pos;
-        }
-        pos -= 1;
-    }
-    0
+    contents[..start_pos]
+        .char_indices()
+        .rev()
+        .find(|(_, character)| !character.is_whitespace())
+        .map(|(index, character)| index + character.len_utf8())
+        .unwrap_or(0)
 }
 
 fn find_remove_dep(deps_list: SyntaxNode, remove_dep: &str) -> Result<TextRange> {
@@ -104,6 +101,31 @@ mod remove_tests {
   ];
 }
         "#;
+        assert_eq!(new_contents, expected_contents);
+    }
+
+    #[test]
+    fn test_remove_dep_after_unicode_comment() {
+        let contents = r#"{ pkgs }: {
+  # café 🚀
+  deps = [
+    pkgs.cowsay
+  ];
+}
+"#;
+
+        let tree = rnix::Root::parse(contents).syntax();
+        let deps_list = verify_get(&tree, DepType::Regular).unwrap();
+
+        let new_contents =
+            remove_dep(contents, deps_list.node, Some("pkgs.cowsay".to_string())).unwrap();
+
+        let expected_contents = r#"{ pkgs }: {
+  # café 🚀
+  deps = [
+  ];
+}
+"#;
         assert_eq!(new_contents, expected_contents);
     }
 
