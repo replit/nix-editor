@@ -22,7 +22,7 @@ git commit --allow-empty -m "Run the load again"
 Evaluate it locally with `nix flake show` or build a single check with
 `nix build .#checks.x86_64-linux.load-0001`.
 
-This branch is the small variant: 64 builds of 30 seconds. It holds a row of
+This branch is the 400-build variant: 400 builds of 10 seconds. It holds a row of
 empty commits so that a caller can take the next unused commit each time and
 always get new builds. Add more with:
 
