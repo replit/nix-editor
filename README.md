@@ -8,7 +8,7 @@ CPU core busy for a fixed time and then writes its name.
 seconds:
 
 ```json
-{ "checks": 64, "seconds": 30 }
+{ "checks": 5000, "seconds": 30 }
 ```
 
 Every build depends on the commit it was evaluated from. Building a commit a
